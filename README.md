@@ -28,7 +28,13 @@
 
 - [x] Handles Retries automatically through `backoff`
 
-- [x] Enables Remote Cloud Object Storage File Handling through `file-io`
+- [x] Supports Local and Remote Cloud Object Storage File Handling Asyncronously through `file-io`
+
+    - [x] Supports `S3`: `s3://bucket/path/to/file.txt`
+    
+    - [x] Supports `GCS`: `gs://bucket/path/to/file.txt`
+
+    - [x] Supports `Minio`: `minio://bucket/path/to/file.txt`
 
 ---
  
@@ -96,7 +102,7 @@ result = asyncio.run(
 
 ```
 
-## Alternative Usage
+### Alternative Usage
 
 Following a similar pattern to the original openai python project, you can additionally use the methods as a drop-in replacement for most functions
 
