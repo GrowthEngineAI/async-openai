@@ -12,7 +12,8 @@ on:
   workflow_dispatch:
   push:
     paths:
-      - 'setup.py'
+      # - 'setup.py'
+      - 'async_openai/version.py'
   release:
     types: [created]
 

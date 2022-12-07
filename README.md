@@ -1,11 +1,9 @@
 # async-openai
- Async Python client library for the OpenAI API based on [Documented Specs](https://beta.openai.com/docs/api-reference/making-requests)
+ Unofficial Async Python client library for the OpenAI API based on [Documented Specs](https://beta.openai.com/docs/api-reference/making-requests)
 
 ## Features
 
-- [x] Strongly typed with `Pydantic` Models
-
-- [x] Asyncio based with Sync and Async Support
+- [x] Asyncio based with Sync and Async Support with `httpx`
 
 - [ ] Supports all API endpoints
 
@@ -15,14 +13,34 @@
     
     - [x] [Embeddings](https://beta.openai.com/docs/api-reference/embeddings)
 
-- [x] Handles Retries automatically
+    - [ ] [Images] (https://beta.openai.com/docs/api-reference/images)
+
+    - [ ] [Files](https://beta.openai.com/docs/api-reference/files)
+
+    - [ ] [Fine-Tunes](https://beta.openai.com/docs/api-reference/fine-tunes)
+
+    - [ ] [Moderations](https://beta.openai.com/docs/api-reference/moderations)
+
+    - [ ] [Search]
+
+- [x] Strongly typed validation of requests and responses with `Pydantic` Models with transparent 
+    access to the raw response and object-based results.
+
+- [x] Handles Retries automatically through `backoff`
+
+- [x] Enables Remote Cloud Object Storage File Handling through `file-io`
 
 ---
  
 ## Installation
 
 ```bash
+# Install from stable
 pip install async-openai
+
+# Install from dev/latest
+pip install git+https://github.com/GrowthEngineAI/async-openai.git
+
 ```
 
 ### Quick Usage
