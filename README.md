@@ -13,7 +13,7 @@
     
     - [x] [Embeddings](https://beta.openai.com/docs/api-reference/embeddings)
 
-    - [ ] [Images] (https://beta.openai.com/docs/api-reference/images)
+    - [ ] [Images](https://beta.openai.com/docs/api-reference/images)
 
     - [ ] [Files](https://beta.openai.com/docs/api-reference/files)
 
@@ -21,7 +21,7 @@
 
     - [ ] [Moderations](https://beta.openai.com/docs/api-reference/moderations)
 
-    - [ ] [Search]
+    - [ ] [Search](#)
 
 - [x] Strongly typed validation of requests and responses with `Pydantic` Models with transparent 
     access to the raw response and object-based results.
