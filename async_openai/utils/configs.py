@@ -81,10 +81,32 @@ class OpenAISettings(BaseSettings):
         organization: Optional[str] = None,
         proxies: Optional[Union[str, Dict]] = None,
         timeout_secs: Optional[int] = None,
+        max_retries: Optional[int] = None,
         **kwargs
     ):
         """
         Allows Post-Init Configuration of the OpenAI Settings
+
+        Usage:
+
+        ```python
+        >>> settings.configure(
+        >>>    api_key = 'sk-...',
+        >>>    organization = 'org-...',
+        >>>    max_retries = 4,
+        >>>    timeout_secs = 60,
+        >>> )
+        ```
+        **Parameters:**
+
+        * `api_key` - Your OpenAI API key.  Env: [`OPENAI_API_KEY`]
+        * `api_base` - The base URL of the OpenAI API. Env: [`OPENAI_API_BASE`]
+        * `api_type` - The OpenAI API type.  Env: [`OPENAI_API_TYPE`]
+        * `api_version` - The OpenAI API version.  Env: [`OPENAI_API_VERSION`]
+        * `organization` - The OpenAI organization. Env: [`OPENAI_ORGANIZATION`]
+        * `proxies` - A dictionary of proxies to be used. Env: [`OPENAI_PROXIES`]
+        * `timeout_secs` - The timeout in seconds to be used. Env: [`OPENAI_TIMEOUT_SECS`]
+        * `max_retries` - The number of retries to be used. Env: [`OPENAI_MAX_RETRIES`]
         """
         if api_key is not None: self.api_key = api_key
         if api_base is not None: self.api_base = api_base
@@ -94,6 +116,7 @@ class OpenAISettings(BaseSettings):
         if organization is not None: self.organization = organization
         if proxies is not None: self.proxies = proxies
         if timeout_secs is not None: self.timeout_secs = timeout_secs
+        if max_retries is not None: self.max_retries = max_retries
         
         for k, v in kwargs.items():
             if not hasattr(self, k):  continue
@@ -137,10 +160,10 @@ class OpenAISettings(BaseSettings):
         if api_type is None: api_type = self.api_type
 
         api_type = api_type.value if isinstance(api_type, ApiType) else api_type
-        #if api_type in {"azure", "azure_ad", "azuread"}:
-        return {"Authorization": f"Bearer {api_key}"}
-        # return {"api-key": api_key}
-
+        if api_type in {"openai", "azure_ad"}:
+            return {"Authorization": f"Bearer {api_key}"}
+        return {"api-key": api_key}
+        
     @lazyproperty
     def base_headers(self) -> Dict[str, Any]:
         """

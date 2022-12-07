@@ -7,13 +7,42 @@ class EmbeddingSchema(BaseSchema):
 
     def create(
         self,
-        model: Optional[str],
         input: Optional[Union[List[Any], Any]],
+        model: Optional[str] = 'text-similarity-babbage-001',
         user: Optional[str] = None,
         **kwargs,
     ) -> EmbeddingResult:
         """
-        Create an Embedding.
+        Get a vector representation of a given input that can be easily 
+        consumed by machine learning models and algorithms.
+
+        Usage:
+
+        ```python
+        >>> result = OpenAI.embeddings.create(
+        >>>    model = 'text-similarity-babbage-001',
+        >>>    input = 'The food was delicious and the waiter...'
+        >>> )
+        ```
+
+        **Parameters:**
+
+        * **input** - *(required)* Input text to get embeddings for, encoded as a string 
+        or array of tokens. To get embeddings for multiple inputs in a single request, 
+        pass an array of strings or array of token arrays. Each input must not exceed 2048 
+        tokens in length.
+        Unless you are embedding code, we suggest replacing newlines (\n) in your input with 
+        a single space, as we have observed inferior results when newlines are present.
+
+        * **model** - *(optional)* ID of the model to use. You can use the List models API 
+        to see all of your available models,  or see our Model overview for descriptions of them.
+        Default: `text-similarity-babbage-001`
+
+        * **user** - *(optional)* A unique identifier representing your end-user, which can help OpenAI to 
+        monitor and detect abuse.
+        Default: `None`
+
+        Returns: `EmbeddingResult`
         """
         request = EmbeddingRequest(
             model = model,
@@ -32,13 +61,42 @@ class EmbeddingSchema(BaseSchema):
     
     async def async_create(
         self,
-        model: Optional[str],
         input: Optional[Union[List[Any], Any]],
+        model: Optional[str] = 'text-similarity-babbage-001',
         user: Optional[str] = None,
         **kwargs,
     ) -> EmbeddingResult:
         """
-        [Async] Create an Embedding.
+        Get a vector representation of a given input that can be easily 
+        consumed by machine learning models and algorithms.
+
+        Usage:
+
+        ```python
+        >>> result = await OpenAI.embeddings.async_create(
+        >>>    model = 'text-similarity-babbage-001',
+        >>>    input = 'The food was delicious and the waiter...'
+        >>> )
+        ```
+
+        **Parameters:**
+
+        * **input** - *(required)* Input text to get embeddings for, encoded as a string 
+        or array of tokens. To get embeddings for multiple inputs in a single request, 
+        pass an array of strings or array of token arrays. Each input must not exceed 2048 
+        tokens in length.
+        Unless you are embedding code, we suggest replacing newlines (\n) in your input with 
+        a single space, as we have observed inferior results when newlines are present.
+
+        * **model** - *(optional)* ID of the model to use. You can use the List models API 
+        to see all of your available models,  or see our Model overview for descriptions of them.
+        Default: `text-similarity-babbage-001`
+
+        * **user** - *(optional)* A unique identifier representing your end-user, which can help OpenAI to 
+        monitor and detect abuse.
+        Default: `None`
+
+        Returns: `EmbeddingResult`
         """
         request = EmbeddingRequest(
             model = model,

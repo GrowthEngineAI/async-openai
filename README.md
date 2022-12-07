@@ -35,6 +35,15 @@ from async_openai import OpenAI, settings
 # Environment variables should pick up the defaults
 # however, you can also set them explicitly.
 
+# `api_key` - Your OpenAI API key.  Env: [`OPENAI_API_KEY`]
+# `api_base` - The base URL of the OpenAI API. Env: [`OPENAI_API_BASE`]
+# `api_type` - The OpenAI API type.  Env: [`OPENAI_API_TYPE`]
+# `api_version` - The OpenAI API version.  Env: [`OPENAI_API_VERSION`]
+# `organization` - The OpenAI organization. Env: [`OPENAI_ORGANIZATION`]
+# `proxies` - A dictionary of proxies to be used. Env: [`OPENAI_PROXIES`]
+# `timeout_secs` - The timeout in seconds to be used. Env: [`OPENAI_TIMEOUT_SECS`]
+# `max_retries` - The number of retries to be used. Env: [`OPENAI_MAX_RETRIES`]
+
 settings.configure(
     api_key = "sk-XXXX",
     organization = "org-XXXX",

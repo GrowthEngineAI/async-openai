@@ -1,8 +1,8 @@
 import httpx
-
+import asyncio
 from typing import Optional, Union, List, Dict
 
-from async_openai.utils.configs import settings, ApiType, logger
+from async_openai.utils.configs import settings, ApiType
 from async_openai.schemas.utils import build_proxies
 
 
@@ -32,7 +32,7 @@ class APIRequestor:
             api_version = self.api_version,
             organization = self.organization,
         )
-        print(self.base_headers)
+        # print(self.base_headers)
         self._aclient = httpx.AsyncClient(
             base_url = self.api_base,
             proxies = self.proxies,
@@ -58,6 +58,14 @@ class APIRequestor:
         if request_id: headers["X-Request-Id"] = request_id
         return headers
     
+    def close(
+        self,
+        **kwargs
+    ):
+        self._client.close()
+        asyncio.create_task(
+            self._aclient.aclose()
+        )
 
 
 class Client:
@@ -94,7 +102,10 @@ class Client:
         _reset: bool = False,
         **kwargs
     ):
-        if (cls.api is None or _reset or settings.should_reset_api()): cls.api = APIRequestor(**kwargs)
+        if (cls.api is None or _reset or settings.should_reset_api()): 
+            # Ensure that existing calls are first closed.
+            if cls.api: cls.api.close()
+            cls.api = APIRequestor(**kwargs)
     
     @classmethod
     def get_headers(

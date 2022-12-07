@@ -6,6 +6,7 @@ from async_openai.schemas.client import Client
 from async_openai.schemas.utils import fatal_exception
 from async_openai.utils import settings
 from async_openai.schemas.types.base import *
+from async_openai.schemas.types.exceptions import RateLimitError
 
 __all__  = [
     'BaseSchema',
