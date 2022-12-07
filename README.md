@@ -3,6 +3,8 @@
 
 ## Features
 
+- [x] Strongly typed with `Pydantic` Models
+
 - [x] Asyncio based with Sync and Async Support
 
 - [ ] Supports all API endpoints
