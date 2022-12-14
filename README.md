@@ -21,7 +21,7 @@
 
     - [ ] `Files`: [Docs](https://beta.openai.com/docs/api-reference/files)
 
-    - [ ] `Fine-Tunes`: [Docs](https://beta.openai.com/docs/api-reference/fine-tunes)
+    - [ ] `Finetuning`: [Docs](https://beta.openai.com/docs/api-reference/fine-tunes)
 
     - [x] `Models`: [Docs](https://beta.openai.com/docs/api-reference/models)
 
