@@ -20,4 +20,6 @@ __pycache__*
 **.ipynb**
 **test.sh
 /.idea/
-!tests
+async_openai/v1*
+tests/private_*
+!tests/

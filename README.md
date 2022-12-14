@@ -1,5 +1,9 @@
 # async-openai
- Unofficial Async Python client library for the OpenAI API based on [Documented Specs](https://beta.openai.com/docs/api-reference/making-requests)
+ Unofficial Async Python client library for the [OpenAI](https://openai.com) API based on [Documented Specs](https://beta.openai.com/docs/api-reference/making-requests)
+
+ **Latest Version**: [![PyPI version](https://badge.fury.io/py/async-openai.svg)](https://badge.fury.io/py/async-openai)
+
+ **[Official Client](https://github.com/openai/openai-python)**
 
 ## Features
 
@@ -7,21 +11,23 @@
 
 - [ ] Supports all API endpoints
 
-    - [x] [Completions](https://beta.openai.com/docs/api-reference/completions)
+    - [x] `Completions`: [Docs](https://beta.openai.com/docs/api-reference/completions)
     
-    - [x] [Edits](https://beta.openai.com/docs/api-reference/edits)
+    - [x] `Edits`: [Docs](https://beta.openai.com/docs/api-reference/edits)
     
-    - [x] [Embeddings](https://beta.openai.com/docs/api-reference/embeddings)
+    - [x] `Embeddings`: [Docs](https://beta.openai.com/docs/api-reference/embeddings)
 
-    - [ ] [Images](https://beta.openai.com/docs/api-reference/images)
+    - [ ] `Images`: [Docs](https://beta.openai.com/docs/api-reference/images)
 
-    - [ ] [Files](https://beta.openai.com/docs/api-reference/files)
+    - [ ] `Files`: [Docs](https://beta.openai.com/docs/api-reference/files)
 
-    - [ ] [Fine-Tunes](https://beta.openai.com/docs/api-reference/fine-tunes)
+    - [ ] `Fine-Tunes`: [Docs](https://beta.openai.com/docs/api-reference/fine-tunes)
 
-    - [ ] [Moderations](https://beta.openai.com/docs/api-reference/moderations)
+    - [x] `Models`: [Docs](https://beta.openai.com/docs/api-reference/models)
 
-    - [ ] [Search](#)
+    - [ ] `Moderations`: [Docs](https://beta.openai.com/docs/api-reference/moderations)
+
+    - [ ] `Search`: [Docs](#)
 
 - [x] Strongly typed validation of requests and responses with `Pydantic` Models with transparent 
     access to the raw response and object-based results.
@@ -65,13 +71,21 @@ from async_openai import OpenAI, settings
 # `api_version` - The OpenAI API version.  Env: [`OPENAI_API_VERSION`]
 # `organization` - The OpenAI organization. Env: [`OPENAI_ORGANIZATION`]
 # `proxies` - A dictionary of proxies to be used. Env: [`OPENAI_PROXIES`]
-# `timeout_secs` - The timeout in seconds to be used. Env: [`OPENAI_TIMEOUT_SECS`]
+# `timeout` - The timeout in seconds to be used. Env: [`OPENAI_TIMEOUT`]
 # `max_retries` - The number of retries to be used. Env: [`OPENAI_MAX_RETRIES`]
 
-settings.configure(
+OpenAI.configure(
     api_key = "sk-XXXX",
     organization = "org-XXXX",
+    debug_enabled = False,
 )
+
+# Alternatively you can configure the settings through environment variables
+# settings.configure(
+#    api_key = "sk-XXXX",
+#     organization = "org-XXXX",
+# )
+
 
 # [Sync] create a completion
 # Results return a CompletionResult object
@@ -84,7 +98,7 @@ result = OpenAI.completions.create(
 # print the completion text
 # which are concatenated together from the result['choices'][n]['text']
 
-print(result.completion_text)
+print(result.text)
 
 # print the number of choices returned
 print(len(result))
@@ -156,11 +170,13 @@ result = asyncio.run(
 
 The aim of this library is to be as lightweight as possible. It is built on top of the following libraries:
 
-- [httpx](https://www.python-httpx.org/): Async / Sync HTTP Requests
+- [aiohttpx](https://github.com/GrowthEngineAI/aiohttpx): Unified Async / Sync HTTP Client that wraps around `httpx`
+
+    - [httpx](https://www.python-httpx.org/): Async / Sync HTTP Requests
+
+    - [lazyops](https://github.com/trisongz/lazyops): Provides numerous utility functions for working with Async / Sync code and data structures
 
 - [pydantic](https://pydantic-docs.helpmanual.io/): Type Support
-
-- [loguru](https://github.com/Delgan/loguru): Logging
 
 - [file-io](https://github.com/trisongz/file-io): Async Cloud-based File Storage I/O
 

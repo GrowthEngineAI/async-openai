@@ -12,10 +12,7 @@ root = Path(__file__).parent
 version = root.joinpath('async_openai/version.py').read_text().split('VERSION = ', 1)[-1].strip().replace('-', '').replace("'", '')
 
 requirements = [
-    'httpx',
-    'loguru',
-    # 'numpy',
-    'pydantic',
+    'aiohttpx',
     'file-io',
     'backoff',
 ]
@@ -41,7 +38,7 @@ setup(
     version = version,
     url=f'https://github.com/{gitrepo}',
     license='MIT Style',
-    description='Async Python client library for the OpenAI API',
+    description='Unofficial Async Python client library for the OpenAI API',
     author='Tri Songz',
     author_email='ts@growthengineai.com',
     long_description_content_type="text/markdown",
