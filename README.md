@@ -42,6 +42,8 @@
 
     - [x] Supports `Minio`: `minio://bucket/path/to/file.txt`
 
+- [x] Supports `limited` cost tracking for `Completions` and `Edits` requests (when stream is not enabled)
+
 ---
  
 ## Installation
@@ -60,18 +62,18 @@ pip install git+https://github.com/GrowthEngineAI/async-openai.git
 ```python
 
 import asyncio
-from async_openai import OpenAI, settings
+from async_openai import OpenAI, settings, CompletionResponse
 
 # Environment variables should pick up the defaults
 # however, you can also set them explicitly.
 
-# `api_key` - Your OpenAI API key.  Env: [`OPENAI_API_KEY`]
-# `api_base` - The base URL of the OpenAI API. Env: [`OPENAI_API_BASE`]
-# `api_type` - The OpenAI API type.  Env: [`OPENAI_API_TYPE`]
-# `api_version` - The OpenAI API version.  Env: [`OPENAI_API_VERSION`]
-# `organization` - The OpenAI organization. Env: [`OPENAI_ORGANIZATION`]
-# `proxies` - A dictionary of proxies to be used. Env: [`OPENAI_PROXIES`]
-# `timeout` - The timeout in seconds to be used. Env: [`OPENAI_TIMEOUT`]
+# `api_key` - Your OpenAI API key.                  Env: [`OPENAI_API_KEY`]
+# `url` - The URL of the OpenAI API.                Env: [`OPENAI_URL`]
+# `api_type` - The OpenAI API type.                 Env: [`OPENAI_API_TYPE`]
+# `api_version` - The OpenAI API version.           Env: [`OPENAI_API_VERSION`]
+# `organization` - The OpenAI organization.         Env: [`OPENAI_ORGANIZATION`]
+# `proxies` - A dictionary of proxies to be used.   Env: [`OPENAI_PROXIES`]
+# `timeout` - The timeout in seconds to be used.    Env: [`OPENAI_TIMEOUT`]
 # `max_retries` - The number of retries to be used. Env: [`OPENAI_MAX_RETRIES`]
 
 OpenAI.configure(
@@ -89,7 +91,7 @@ OpenAI.configure(
 
 # [Sync] create a completion
 # Results return a CompletionResult object
-result = OpenAI.completions.create(
+result: CompletionResponse = OpenAI.completions.create(
     prompt = 'say this is a test',
     max_tokens = 4,
     stream = True
@@ -103,10 +105,13 @@ print(result.text)
 # print the number of choices returned
 print(len(result))
 
+# get the cost consumption for the request
+print(result.consumption)
+
 # [Async] create a completion
 # All async methods are generally prefixed with `async_`
 
-result = asyncio.run(
+result: CompletionResponse = asyncio.run(
     OpenAI.completions.async_create(
         prompt = 'say this is a test',
         max_tokens = 4,
@@ -116,53 +121,6 @@ result = asyncio.run(
 
 ```
 
-### Alternative Usage
-
-Following a similar pattern to the original openai python project, you can additionally use the methods as a drop-in replacement for most functions
-
-```python
-
-import asyncio
-import async_openapi as openai
-
-# Environment variables should pick up the defaults
-# however, you can also set them explicitly.
-
-openai.settings.configure(
-    api_key = "sk-XXXX",
-    organization = "org-XXXX",
-)
-
-# [Sync] create a completion
-# Results return a CompletionResult object
-# Note, the only difference in this method is that the `Completion` is capitalized to match the OpenAI API
-
-result = openai.Completions.create(
-    prompt = 'say this is a test',
-    max_tokens = 4,
-    stream = True
-)
-
-# print the completion text
-# which are concatenated together from the result['choices'][n]['text']
-
-print(result.completion_text)
-
-# print the number of choices returned
-print(len(result))
-
-# [Async] create a completion
-result = asyncio.run(
-    openai.Completions.async_create(
-        prompt = 'say this is a test',
-        max_tokens = 4,
-        stream = True
-    )
-)
-
-
-
-```
 
 ---
 
