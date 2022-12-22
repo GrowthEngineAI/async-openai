@@ -23,7 +23,7 @@ class CompletionChoice(BaseResource):
 
 
 class CompletionObject(BaseResource):
-    model: Optional[Union[str, OpenAIModel, Any]] = OpenAIModelType.curie
+    model: Optional[Union[OpenAIModel, str, Any]] = OpenAIModelType.curie
     prompt: Optional[str] = '<|endoftext|>'
     suffix: Optional[str] = None
     max_tokens: Optional[int] = 16

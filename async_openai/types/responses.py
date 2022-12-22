@@ -38,7 +38,7 @@ class BaseResponse(BaseResource):
     event_model: Optional[Type[BaseResource]] = None
 
     # Other Metadata
-    usage: Optional[Type[Usage]] = None
+    usage: Optional[Usage] = None
     model: Optional[str] = None
 
     _input_object: Optional[Type[BaseResource]] = None

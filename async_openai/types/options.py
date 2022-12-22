@@ -17,7 +17,7 @@ _image_prices = {
 # price per 1k/tokens
 _completion_prices = {
     'ada': 0.0004,
-    'babbage': 0.0004,
+    'babbage': 0.0005,
     'curie': 0.002,
     'davinci': 0.02,
 }

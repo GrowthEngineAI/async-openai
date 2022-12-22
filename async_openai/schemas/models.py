@@ -1,3 +1,4 @@
+import datetime
 from typing import Optional, Type, List, Dict, Any
 from lazyops.types import lazyproperty
 
@@ -17,10 +18,20 @@ __all__ = [
 class ModelData(BaseResource):
     id: str
     owned_by: str
+    created: Optional[datetime.datetime]
     permission: List[Permission] = []
     root: str
     parent: Optional[str]
     object: str = 'model'
+
+    @lazyproperty
+    def model_age(self) -> Optional[datetime.datetime]:
+        """
+        Returns how long ago the model was created
+        """
+        if self.created:
+            return datetime.datetime.now(tz = datetime.timezone.utc) - self.created
+
 
 class ModelObject(BaseResource):
     model: Optional[str]
