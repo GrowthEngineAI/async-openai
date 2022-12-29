@@ -127,6 +127,10 @@ class BaseResponse(BaseResource):
     def openai_model(self) -> Optional[str]:
         return self.headers.get("openai-model")
     
+    @property
+    def model_id(self) -> Optional[str]:
+        return self.model.split('-')[1]
+    
     """
     Object Data Properties
     """
