@@ -21,7 +21,7 @@ class EmbeddingData(BaseResource):
     index: Optional[int] = 0
 
 class EmbeddingObject(BaseResource):
-    model: Optional[Union[str, OpenAIModel, Any]] = OpenAIModelType.curie
+    model: Optional[Union[str, OpenAIModel, Any]] = "curie"
     input: Optional[Union[List[Any], Any]]
     user: Optional[str] = None
 
@@ -30,6 +30,10 @@ class EmbeddingObject(BaseResource):
         """
         Validate the model
         """
+        if isinstance(v, OpenAIModel):
+            return v
+        if isinstance(v, dict):
+            return OpenAIModel(**v)
         return OpenAIModel(value = v, mode = 'embedding')
 
 

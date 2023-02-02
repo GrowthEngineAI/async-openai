@@ -71,7 +71,8 @@ class FilePurpose(str, Enum):
     search = "search"
 
     @classmethod
-    def parse_str(cls, value: str):
+    def parse_str(cls, value: Union[str, 'FilePurpose'], raise_error: bool = True):
+        if isinstance(value, cls): return value
         if "train" in value:
             return cls.train
         elif "finetune" in value:
@@ -80,11 +81,34 @@ class FilePurpose(str, Enum):
             return cls.fine_tune
         elif "search" in value:
             return cls.search
+        if not raise_error: return None
         raise ValueError(f"Cannot convert {value} to FilePurpose")
+
 
 class OpenAIModelType(str, Enum):
     """
     OpenAI Model Types
+    """
+    text = "text"
+    audio = "audio"
+    code = "code"
+    custom = "custom"
+
+    @classmethod
+    def parse(cls, value: Union[str, 'OpenAIModelType'], raise_error: bool = True):
+        if isinstance(value, cls): return value
+        if "text" in value:
+            return cls.text
+        elif "audio" in value:
+            return cls.audio
+        elif "code" in value:
+            return cls.code
+        return cls.custom
+
+
+class OpenAIModelArch(str, Enum):
+    """
+    OpenAI Model Architectures
     """
 
     davinci = "davinci"
@@ -94,7 +118,8 @@ class OpenAIModelType(str, Enum):
     custom = "custom"
 
     @classmethod
-    def parse_str(cls, value: str):
+    def parse(cls, value: Union[str, 'OpenAIModelArch'], raise_error: bool = True):
+        if isinstance(value, cls): return value
         if "davinci" in value:
             return cls.davinci
         elif "curie" in value:
@@ -138,97 +163,129 @@ class ModelMode(str, Enum):
     fine_tune = "finetune"
     train = "train"
     embedding = "embedding"
+    similiarity = "similiarity"
     search = "search"
+    chat = "chat"
 
     @classmethod
-    def parse_str(cls, value: str):
+    def parse(cls, value: Union[str, 'ModelMode'], raise_error: bool = True):
+        if isinstance(value, cls): return value
         if "completion" in value:
             return cls.completion
-        elif "edit" in value:
+        if "edit" in value:
             return cls.edit
-        elif "finetune" in value:
+        if "finetune" in value:
             return cls.finetune
-        elif "fine-tune" in value:
+        if "fine-tune" in value:
             return cls.fine_tune
-        elif "train" in value:
+        if "train" in value:
             return cls.train
-        elif "embedding" in value:
+        if "embedding" in value:
             return cls.embedding
-        elif "search" in value:
+        if "search" in value:
             return cls.search
+        if "similiarity" in value:
+            return cls.similiarity
+        if "chat" in value:
+            return cls.chat
+        if "text" in value:
+            return cls.completion
+        if not raise_error: return None
         raise ValueError(f"Cannot convert {value} to ModelMode")
+    
+    @classmethod
+    def get_text_modes(cls):
+        return [
+            cls.completion, 
+            cls.edit,
+            cls.embedding,
+            cls.similiarity, 
+            cls.search, 
+            cls.chat
+        ]
+
+class OpenAIModel:
+
+    def __init__(
+        self, 
+        value: str, 
+        **kwargs
+    ):
+        self.src_value = value
+        self.src_splits = value.split("-")
+        self.mode: ModelMode = kwargs.get("mode")
+        self.model_arch: OpenAIModelArch = kwargs.get("model_arch")
+        self.model_type: OpenAIModelType = kwargs.get("model_type")
+        self.version: str = kwargs.get("version")
+        self.parse_values()
+
+    def parse_values(self):
+        """
+        Parse the source values into the correct parts
+        """
+        self.mode = ModelMode.parse((self.mode or self.src_value), raise_error = False) or ModelMode.completion
+        self.model_arch = OpenAIModelArch.parse((self.model_arch or self.src_value), raise_error = False)
+        self.model_type = OpenAIModelType.parse(
+            (self.model_type or \
+                ("text" if self.mode in ModelMode.get_text_modes() else self.src_value)
+            ), raise_error = False)
+        if not self.version:
+            ver_values = [x for x in self.src_splits if x[0].isdigit()]
+            if ver_values:
+                self.version = '-'.join(ver_values)
+            elif self.mode == ModelMode.completion:
+                self.version = "003" if self.model_arch == "davinci" else "001"
+            elif self.model_type != OpenAIModelType.custom:
+                self.version = "001"
 
 
-class OpenAIModel(BaseModel):
-    value: Union[str, OpenAIModelType]
-    mode: Optional[Union[str, ModelMode]] = ModelMode.completion
+    @lazyproperty
+    def value(self) -> str:
+        """
+        The value of the model
+        """
+        if self.model_arch == OpenAIModelArch.custom or self.model_type == OpenAIModelType.custom:
+            return self.src_value
+        
+        t = f'{self.model_type.value}'
+        if self.mode != ModelMode.completion:
+            t += f'-{self.mode.value}'
+        t += f'-{self.model_arch.value}'
+        if self.version:
+            t += f'-{self.version}'
+        return t
 
-    @lazyproperty
-    def model_type(self):
-        if isinstance(self.value, OpenAIModelType):
-            return self.value
-        return OpenAIModelType.parse_str(self.value)
+    def dict(self, *args, **kwargs):
+        return self.value
     
-    @lazyproperty
-    def model_mode(self):
-        if isinstance(self.mode, ModelMode):
-            return self.mode
-        return ModelMode.parse_str(self.mode)
-    
-    @lazyproperty
-    def model(self):
-        if self.model_type == OpenAIModelType.custom:
-            return self.value
-        return self.model_type.value
-    
-    @property
-    def model_version(self):
-        return self.model_type.model_version
-    
-    @property
-    def edit_model(self):
-        return self.model_type.edit_model
-    
-    @property
-    def completion_model(self):
-        return self.model_type.completion_model
-    
-    @property
-    def embedding_model(self):
-        return self.model_type.embedding_model
-    
-    @property
-    def finetune_model(self):
-        return self.model_type.finetune_model
+    def __str__(self):
+        return f'OpenAIModel(value="{self.value}", mode="{self.mode}", model_arch="{self.model_arch}", model_type="{self.model_type}", version="{self.version})'
+
+    def __repr__(self) -> str:
+        return f'OpenAIModel(value="{self.value}", mode="{self.mode}", model_arch="{self.model_arch}", model_type="{self.model_type}", version="{self.version})'
 
     def get_cost(
         self,
         total_tokens: int = 1,
         mode: Optional[str] = None,
+        raise_error: bool = True,
+        default_token_cost: Optional[float] = 0.00001,
     ) -> float:
         """
         Returns the total cost of the model
         usage
         """
-        mode = mode or self.model_mode.value
+        mode = mode or self.mode.value
         if mode in {'completion', 'edit'}:
-            return total_tokens * (_completion_prices[self.model] / 1000)
+            return total_tokens * (_completion_prices[self.model_arch.value] / 1000)
         if 'embedding' in mode:
-            return total_tokens * (_embedding_prices[self.model]  / 1000)
+            return total_tokens * (_embedding_prices[self.model_arch.value]  / 1000)
         if 'train' in mode:
-            return total_tokens * (_finetune_training_prices[self.model] / 1000)
+            return total_tokens * (_finetune_training_prices[self.model_arch.value] / 1000)
         if 'finetune' in mode or 'fine-tune' in mode:
-            return total_tokens * (_finetune_usage_prices[self.model] / 1000)
-        raise ValueError(f"Invalid mode {mode}")
-    
-    def dict(self, **kwargs):
-        if self.mode == ModelMode.completion:
-            return self.completion_model
-        if self.mode == ModelMode.edit:
-            return self.edit_model
-        if self.mode == ModelMode.embedding:
-            return self.embedding_model
-        return self.finetune_model if self.mode == ModelMode.finetune else self.value
+            return total_tokens * (_finetune_usage_prices[self.model_arch.value] / 1000)
+        if raise_error: raise ValueError(f"Invalid mode {mode}")
+        return total_tokens * default_token_cost
 
 
 class EditModels(str, Enum):

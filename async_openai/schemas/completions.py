@@ -23,7 +23,7 @@ class CompletionChoice(BaseResource):
 
 
 class CompletionObject(BaseResource):
-    model: Optional[Union[OpenAIModel, str, Any]] = OpenAIModelType.curie
+    model: Optional[Union[OpenAIModel, str, Any]] = "davinci"
     prompt: Optional[str] = '<|endoftext|>'
     suffix: Optional[str] = None
     max_tokens: Optional[int] = 16
@@ -45,6 +45,10 @@ class CompletionObject(BaseResource):
         """
         Validate the model
         """
+        if isinstance(v, OpenAIModel):
+            return v
+        if isinstance(v, dict):
+            return OpenAIModel(**v)
         return OpenAIModel(value = v, mode = 'completion')
 
     @validator('max_tokens')
@@ -120,9 +124,9 @@ class CompletionResponse(BaseResponse):
     def consumption(self) -> int:
         """
         Returns the consumption for the completions
-        """
+        """ 
         if self.usage and self.completion_model:
-            return self.completion_model.get_cost(total_tokens=self.usage.total_tokens)
+            return self.completion_model.get_cost(total_tokens = self.usage.total_tokens)
         return None
 
 

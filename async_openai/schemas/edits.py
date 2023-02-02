@@ -22,7 +22,7 @@ class EditChoice(BaseResource):
     finish_reason: Optional[str]
 
 class EditObject(BaseResource):
-    model: Optional[Union[str, OpenAIModel, Any]] = OpenAIModelType.curie
+    model: Optional[Union[str, OpenAIModel, Any]] = "curie"
     instruction: Optional[str]
     input: Optional[str] = ""
     n: Optional[int] = 1
@@ -35,6 +35,10 @@ class EditObject(BaseResource):
         """
         Validate the model
         """
+        if isinstance(v, OpenAIModel):
+            return v
+        if isinstance(v, dict):
+            return OpenAIModel(**v)
         return OpenAIModel(value = v, mode = 'edit')
 
 
