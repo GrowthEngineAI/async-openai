@@ -67,6 +67,22 @@ class BaseResponse(BaseResource):
             return self.data_model
         return self.event_model if self.has_events else None
 
+    @lazyproperty
+    def excluded_params(self) -> List[str]:
+        return [
+            "data_model", "choice_model", "event_model",
+        ]
+    
+    def dict(self, *args, exclude: Any = None, **kwargs):
+        """
+        Returns the dict representation of the response
+        """
+        if exclude is None:
+            exclude = set()
+        exclude = set(exclude) | set(self.excluded_params)
+        return super().dict(*args, exclude = exclude, **kwargs)
+
+
     """
     Metadata Properties
     """
