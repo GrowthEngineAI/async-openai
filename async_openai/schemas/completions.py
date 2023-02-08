@@ -41,10 +41,12 @@ class CompletionObject(BaseResource):
     user: Optional[str] = None
 
     @validator('model', pre=True, always=True)
-    def validate_model(cls, v) -> OpenAIModel:
+    def validate_model(cls, v, values: Dict[str, Any]) -> OpenAIModel:
         """
         Validate the model
         """
+        if not v and values.get('engine'):
+            v = values.get('engine')
         if isinstance(v, OpenAIModel):
             return v
         if isinstance(v, dict):
