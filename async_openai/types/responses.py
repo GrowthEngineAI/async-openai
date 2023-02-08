@@ -70,7 +70,9 @@ class BaseResponse(BaseResource):
     @lazyproperty
     def excluded_params(self) -> List[str]:
         return [
-            "data_model", "choice_model", "event_model",
+            "data_model", "choice_model", "event_model", 
+            "excluded_params", "input_object", "resource_model", "input_model",
+            "_response", "_has_metadata", "metadata_fields",
         ]
     
     def dict(self, *args, exclude: Any = None, **kwargs):

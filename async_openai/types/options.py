@@ -204,7 +204,7 @@ class ModelMode(str, Enum):
             cls.chat
         ]
 
-class OpenAIModel:
+class OpenAIModel(object):
 
     def __init__(
         self, 
@@ -256,13 +256,25 @@ class OpenAIModel:
         return t
 
     def dict(self, *args, **kwargs):
-        return self.value
+        return {
+            "value": self.value,
+            "mode": self.mode.value,
+            "model_arch": self.model_arch.value,
+            "model_type": self.model_type.value,
+            "version": self.version,
+        }
     
     def __str__(self):
         return f'OpenAIModel(value="{self.value}", mode="{self.mode}", model_arch="{self.model_arch}", model_type="{self.model_type}", version="{self.version})'
 
     def __repr__(self) -> str:
         return f'OpenAIModel(value="{self.value}", mode="{self.mode}", model_arch="{self.model_arch}", model_type="{self.model_type}", version="{self.version})'
+
+    def __json__(self):
+        return self.value
+    
+    # def __dict__(self):
+    #     return self.value
 
     def get_cost(
         self,

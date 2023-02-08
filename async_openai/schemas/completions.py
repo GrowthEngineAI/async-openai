@@ -102,6 +102,18 @@ class CompletionObject(BaseResource):
         return None if v is None else max(0.0, min(v, 2.0))
     
 
+    def dict(self, *args, exclude: Any = None, **kwargs):
+        """
+        Returns the dict representation of the response
+        """
+        data = super().dict(*args, exclude = exclude, **kwargs)
+        if data.get('model'):
+            data['model'] = data['model'].value
+        return data
+
+
+    
+
 class CompletionResponse(BaseResponse):
     choices: Optional[List[CompletionChoice]]
     choice_model: Optional[Type[BaseResource]] = CompletionChoice
@@ -130,6 +142,16 @@ class CompletionResponse(BaseResponse):
         if self.usage and self.completion_model:
             return self.completion_model.get_cost(total_tokens = self.usage.total_tokens)
         return None
+
+
+    def dict(self, *args, exclude: Any = None, **kwargs):
+        """
+        Returns the dict representation of the response
+        """
+        data = super().dict(*args, exclude = exclude, **kwargs)
+        if data.get('completion_model'):
+            data['completion_model'] = data['completion_model'].dict()
+        return data
 
 
 class CompletionRoute(BaseRoute):
