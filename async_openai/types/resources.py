@@ -44,6 +44,22 @@ class Usage(BaseModel):
     @lazyproperty
     def consumption(self):
         return self.total_tokens
+    
+    def update(self, usage: Union['Usage', Dict[str, int]]):
+        """
+        Updates the consumption
+        """
+        for key in {
+            'prompt_tokens',
+            'completion_tokens',
+            'total_tokens',
+        }:
+            if not hasattr(self, key):
+                setattr(self, key, 0)
+            val = usage.get(key, 0) if isinstance(usage, dict) else getattr(usage, key, 0)
+            setattr(self, key, getattr(self, key) + val)
+
+
 
 
 class BaseResource(BaseModel):

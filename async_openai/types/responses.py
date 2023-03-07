@@ -331,3 +331,14 @@ class BaseResponse(BaseResource):
             self.id = item['id']
         if not self.created and item.get('created'):
             self.created = datetime.datetime.fromtimestamp(item['created'], datetime.timezone.utc)
+        if not self.usage:
+            self.usage = Usage(completion_tokens=0)
+    
+    @lazyproperty
+    def choices_results(self) -> List[Type[BaseResource]]:
+        """
+        Parses the choices first
+        """
+        if self.choices is None:
+            self.construct_resource()
+        return self.choices

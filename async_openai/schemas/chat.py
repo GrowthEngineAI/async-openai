@@ -143,9 +143,7 @@ class ChatResponse(BaseResponse):
 
     @lazyproperty
     def messages(self) -> List[ChatMessage]:
-        if self.has_stream:
-            self.construct_resource()
-        if self.choices:
+        if self.choices_results:
             return [choice.message for choice in self.choices]
         return self._response.text
 
@@ -154,7 +152,7 @@ class ChatResponse(BaseResponse):
         """
         Returns the text for the chat response
         """
-        if self.choices:
+        if self.choices_results:
             return '\n'.join([f'{msg.role}: {msg.content}' for msg in self.messages])
         return self._response.text
 
@@ -188,8 +186,6 @@ class ChatResponse(BaseResponse):
         self,
         response: aiohttpx.Response
     ) -> Iterator[Dict]:
-        result = {'role': '', 'content': ''}
-        index = None
 
         results = {}
         for line in response.iter_lines():
@@ -213,10 +209,12 @@ class ChatResponse(BaseResponse):
                                 'content': choice['delta'].get('content', ''),
                             }
                         }
+                        self.usage.completion_tokens += 1
 
                     elif choice['finish_reason'] != 'stop':
                         for k,v in choice['delta'].items():
                             if v: results[n]['message'][k] += v
+                            self.usage.completion_tokens += 1
 
                     else:
                         results[n]['finish_reason'] = choice['finish_reason']
@@ -226,6 +224,7 @@ class ChatResponse(BaseResponse):
                 logger.error(f'Error: {line}: {e}')
         
         yield from results.values()
+        self.usage.total_tokens = self.usage.completion_tokens
 
 
 class ChatRoute(BaseRoute):

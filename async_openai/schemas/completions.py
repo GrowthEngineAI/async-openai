@@ -127,7 +127,7 @@ class CompletionResponse(BaseResponse):
         """
         Returns the text for the completions
         """
-        if self.choices:
+        if self.choices_results:
             return ''.join([choice.text for choice in self.choices])
         return self._response.text
     
@@ -180,8 +180,10 @@ class CompletionResponse(BaseResponse):
                             'index': choice['index'],
                             'text': choice['text'],
                         }
+                        self.usage.completion_tokens += 1
                     elif choice['finish_reason'] != 'stop':
                         texts[n]['text'] += choice['text']
+                        self.usage.completion_tokens += 1
 
                     else:
                         texts[n]['finish_reason'] = choice['finish_reason']
@@ -191,6 +193,7 @@ class CompletionResponse(BaseResponse):
                 logger.error(f'Error: {line}: {e}')
 
         yield from texts.values()
+        self.usage.total_tokens = self.usage.completion_tokens
 
 
 class CompletionRoute(BaseRoute):
