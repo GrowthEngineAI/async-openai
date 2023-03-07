@@ -6,6 +6,7 @@ from async_openai.utils.config import settings
 
 RouteClasses = {
     'completions': CompletionRoute,
+    'chat': ChatRoute,
     'edits': EditRoute,
     'embeddings': EmbeddingRoute,
     # 'files': FileRoute,
@@ -19,7 +20,9 @@ class ApiRoutes:
     """
     Container for all the routes in the API.
     """
+
     completions: CompletionRoute = None
+    chat: ChatRoute = None
     edits: EditRoute = None
     embeddings: EmbeddingRoute = None
     # files: FileRoute = None

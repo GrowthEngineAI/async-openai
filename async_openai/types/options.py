@@ -43,6 +43,10 @@ _embedding_prices = {
     'davinci': 0.2,
 }
 
+_chat_prices = {
+    'gpt-3.5-turbo': 0.002,
+}
+
 
 class ApiType(str, Enum):
     azure = "azure"
@@ -92,6 +96,7 @@ class OpenAIModelType(str, Enum):
     text = "text"
     audio = "audio"
     code = "code"
+    chat = "chat"
     custom = "custom"
 
     @classmethod
@@ -103,6 +108,8 @@ class OpenAIModelType(str, Enum):
             return cls.audio
         elif "code" in value:
             return cls.code
+        elif "gpt-3.5" in value or "chat" in value:
+            return cls.chat
         return cls.custom
 
 
@@ -115,6 +122,7 @@ class OpenAIModelArch(str, Enum):
     curie = "curie"
     babbage = "babbage"
     ada = "ada"
+    chat = "gpt-3.5"
     custom = "custom"
 
     @classmethod
@@ -128,6 +136,8 @@ class OpenAIModelArch(str, Enum):
             return cls.babbage
         elif "ada" in value:
             return cls.ada
+        elif "gpt-3.5" in value or "chat" in value:
+            return cls.chat
         return cls.custom
 
 
@@ -146,6 +156,10 @@ class OpenAIModelArch(str, Enum):
     @lazyproperty
     def embedding_model(self):
         return f"text-similarity-{self.value}-{self.model_version}"
+    
+    @lazyproperty
+    def chat_model(self):
+        return 'gpt-3.5-turbo'
     
     @lazyproperty
     def finetune_model(self):
@@ -186,7 +200,7 @@ class ModelMode(str, Enum):
             return cls.search
         if "similiarity" in value:
             return cls.similiarity
-        if "chat" in value:
+        if "chat" in value or "gpt-3.5" in value:
             return cls.chat
         if "text" in value:
             return cls.completion
@@ -201,7 +215,7 @@ class ModelMode(str, Enum):
             cls.embedding,
             cls.similiarity, 
             cls.search, 
-            cls.chat
+            # cls.chat
         ]
 
 class OpenAIModel(object):
@@ -233,8 +247,16 @@ class OpenAIModel(object):
             ver_values = [x for x in self.src_splits if x[0].isdigit()]
             if ver_values:
                 self.version = '-'.join(ver_values)
+                if self.mode ==  ModelMode.chat:
+                    if self.version == '3.5':
+                        self.version = None
+                    else:
+                        self.version = self.version.rsplit('-', 1)[-1]
+
             elif self.mode == ModelMode.completion:
                 self.version = "003" if self.model_arch == "davinci" else "001"
+            elif self.mode == ModelMode.chat:
+                pass
             elif self.model_type != OpenAIModelType.custom:
                 self.version = "001"
 
@@ -246,7 +268,8 @@ class OpenAIModel(object):
         """
         if self.model_arch == OpenAIModelArch.custom or self.model_type == OpenAIModelType.custom:
             return self.src_value
-        
+        if self.mode == ModelMode.chat:
+            return f'{self.src_value}-{self.version}' if self.version else self.src_value
         t = f'{self.model_type.value}'
         if self.mode != ModelMode.completion:
             t += f'-{self.mode.value}'
@@ -265,10 +288,10 @@ class OpenAIModel(object):
         }
     
     def __str__(self):
-        return f'OpenAIModel(value="{self.value}", mode="{self.mode}", model_arch="{self.model_arch}", model_type="{self.model_type}", version="{self.version})'
+        return f'OpenAIModel(value="{self.value}", mode="{self.mode}", model_arch="{self.model_arch}", model_type="{self.model_type}", version="{self.version}")'
 
     def __repr__(self) -> str:
-        return f'OpenAIModel(value="{self.value}", mode="{self.mode}", model_arch="{self.model_arch}", model_type="{self.model_type}", version="{self.version})'
+        return f'OpenAIModel(value="{self.value}", mode="{self.mode}", model_arch="{self.model_arch}", model_type="{self.model_type}", version="{self.version}")'
 
     def __json__(self):
         return self.value
@@ -290,6 +313,8 @@ class OpenAIModel(object):
         mode = mode or self.mode.value
         if mode in {'completion', 'edit'}:
             return total_tokens * (_completion_prices[self.model_arch.value] / 1000)
+        if mode in {'chat'}:
+            return total_tokens * (_chat_prices['gpt-3.5-turbo'] / 1000)
         if 'embedding' in mode:
             return total_tokens * (_embedding_prices[self.model_arch.value]  / 1000)
         if 'train' in mode:

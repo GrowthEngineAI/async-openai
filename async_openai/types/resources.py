@@ -45,6 +45,7 @@ class Usage(BaseModel):
     def consumption(self):
         return self.total_tokens
 
+
 class BaseResource(BaseModel):
 
     """
@@ -83,6 +84,7 @@ class BaseResource(BaseModel):
     
     @classmethod
     def create_many(cls, data: List[Dict]) -> List['BaseResource']:
+        # logger.info(f"Creating: {data}")
         return [cls.parse_obj(d) for d in data]
     
     @staticmethod

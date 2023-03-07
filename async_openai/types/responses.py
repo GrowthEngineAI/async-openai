@@ -72,7 +72,7 @@ class BaseResponse(BaseResource):
         return [
             "data_model", "choice_model", "event_model", 
             "excluded_params", "input_object", "resource_model", "input_model",
-            "_response", "_has_metadata", "metadata_fields",
+            # "_response", "_has_metadata", "metadata_fields",
         ]
     
     def dict(self, *args, exclude: Any = None, **kwargs):
