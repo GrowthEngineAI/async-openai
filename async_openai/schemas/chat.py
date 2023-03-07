@@ -1,10 +1,15 @@
-from typing import Optional, Type, Any, Union, List, Dict
+import json
+import aiohttpx
+
+from typing import Optional, Type, Any, Union, List, Dict, Iterator
 from lazyops.types import validator, lazyproperty
 
 from async_openai.types.options import OpenAIModel
 from async_openai.types.resources import BaseResource
 from async_openai.types.responses import BaseResponse
 from async_openai.types.routes import BaseRoute
+from async_openai.utils import logger
+
 
 
 __all__ = [
@@ -24,6 +29,8 @@ class ChatChoice(BaseResource):
     index: int
     logprobs: Optional[Any]
     finish_reason: Optional[str]
+
+
 
 
 class ChatObject(BaseResource):
@@ -123,7 +130,7 @@ class ChatObject(BaseResource):
         Returns the dict representation of the response
         """
         data = super().dict(*args, exclude = exclude, **kwargs)
-        data['stream'] = False
+        # data['stream'] = False
         if data.get('model'):
             data['model'] = data['model'].value
         return data
@@ -132,9 +139,12 @@ class ChatObject(BaseResource):
 class ChatResponse(BaseResponse):
     choices: Optional[List[ChatChoice]]
     choice_model: Optional[Type[BaseResource]] = ChatChoice
+    _input_object: Optional[ChatObject] = None
 
     @lazyproperty
     def messages(self) -> List[ChatMessage]:
+        if self.has_stream:
+            self.construct_resource()
         if self.choices:
             return [choice.message for choice in self.choices]
         return self._response.text
@@ -173,6 +183,49 @@ class ChatResponse(BaseResponse):
         if data.get('chat_model'):
             data['chat_model'] = data['chat_model'].dict()
         return data
+    
+    def handle_stream(
+        self,
+        response: aiohttpx.Response
+    ) -> Iterator[Dict]:
+        result = {'role': '', 'content': ''}
+        index = None
+
+        results = {}
+        for line in response.iter_lines():
+            if not line: continue
+            if "data: [DONE]" in line:
+                # return here will cause GeneratorExit exception in urllib3
+                # and it will close http connection with TCP Reset
+                continue
+            if line.startswith("data: "):
+                line = line[len("data: ") :]
+            if not line.strip(): continue
+            try:
+                item = json.loads(line)
+                self.handle_stream_metadata(item)
+                for n, choice in enumerate(item['choices']):
+                    if not results.get(n):
+                        results[n] = {
+                            'index': choice['index'],
+                            'message': {
+                                'role': choice['delta'].get('role', ''),
+                                'content': choice['delta'].get('content', ''),
+                            }
+                        }
+
+                    elif choice['finish_reason'] != 'stop':
+                        for k,v in choice['delta'].items():
+                            if v: results[n]['message'][k] += v
+
+                    else:
+                        results[n]['finish_reason'] = choice['finish_reason']
+                        yield results.pop(n)
+
+            except Exception as e:
+                logger.error(f'Error: {line}: {e}')
+        
+        yield from results.values()
 
 
 class ChatRoute(BaseRoute):

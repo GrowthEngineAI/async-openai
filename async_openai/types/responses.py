@@ -7,6 +7,7 @@ from lazyops.types import BaseModel, lazyproperty
 from typing import Dict, Optional, Any, List, Type, Union, cast
 from async_openai.types.errors import error_handler
 from async_openai.types.resources import BaseResource, FileObject, Usage
+from async_openai.utils import logger
 
 __all__ = [
     'BaseResponse'
@@ -230,10 +231,14 @@ class BaseResponse(BaseResource):
         """
         Handle a single `choice` item
         """
+        if self.choices is None: self.choices = []
+        
         if item.get('choices'):
-            if self.choices is None: self.choices = []
             choices = self.choice_model.create_many(item['choices'])
             self.choices.extend(choices)
+        elif self.has_stream:
+            self.choices.append(self.choice_model.parse_obj(item))
+
         
     
     def handle_event_item(
@@ -261,7 +266,7 @@ class BaseResponse(BaseResource):
         if not self._has_metadata:
             self.handle_metadata(item, **kwargs)
         
-        if self.has_choices and item.get('choices'):
+        if self.has_choices and (item.get('choices') or self.has_stream):
             self.handle_choice_item(item, **kwargs)
         
         elif self.has_events and item.get('events'):
@@ -312,3 +317,17 @@ class BaseResponse(BaseResource):
         resource.construct_resource(**kwargs)
         # logger.info(f"Response: {resource}")
         return resource
+
+
+    def handle_stream_metadata(
+        self,
+        item: Dict[str, Any],
+        **kwargs
+    ):
+        """
+        Handles the stream metadata
+        """
+        if not self.id and item.get('id'):
+            self.id = item['id']
+        if not self.created and item.get('created'):
+            self.created = datetime.datetime.fromtimestamp(item['created'], datetime.timezone.utc)

@@ -1,10 +1,14 @@
-from typing import Optional, Type, Any, Union, List, Dict
+import aiohttpx
+import json
+
+from typing import Optional, Type, Any, Union, List, Dict, Iterator
 from lazyops.types import validator, lazyproperty
 
 from async_openai.types.options import OpenAIModel, OpenAIModelType
 from async_openai.types.resources import BaseResource
 from async_openai.types.responses import BaseResponse
 from async_openai.types.routes import BaseRoute
+from async_openai.utils import logger
 
 
 __all__ = [
@@ -152,6 +156,41 @@ class CompletionResponse(BaseResponse):
         if data.get('completion_model'):
             data['completion_model'] = data['completion_model'].dict()
         return data
+
+
+    def handle_stream(
+        self,
+        response: aiohttpx.Response
+    ) -> Iterator[Dict]:
+        texts = {}
+        for line in response.iter_lines():
+            if not line: continue
+            if "data: [DONE]" in line:
+                continue
+            if line.startswith("data: "):
+                line = line[len("data: ") :]
+            if not line.strip(): continue
+            try:
+
+                item = json.loads(line)
+                self.handle_stream_metadata(item)
+                for n, choice in enumerate(item['choices']):
+                    if not texts.get(n):
+                        texts[n] = {
+                            'index': choice['index'],
+                            'text': choice['text'],
+                        }
+                    elif choice['finish_reason'] != 'stop':
+                        texts[n]['text'] += choice['text']
+
+                    else:
+                        texts[n]['finish_reason'] = choice['finish_reason']
+                        yield texts.pop(n)
+
+            except Exception as e:
+                logger.error(f'Error: {line}: {e}')
+
+        yield from texts.values()
 
 
 class CompletionRoute(BaseRoute):
