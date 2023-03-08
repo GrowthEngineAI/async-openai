@@ -22,7 +22,7 @@ class OpenAISettings(BaseSettings):
     organization: Optional[str] = None
     proxies: Optional[Union[Dict, str]] = None
     app_info: Optional[Dict[str, str]] = None
-    debug_enabled: Optional[bool] = True
+    debug_enabled: Optional[bool] = False
     ignore_errors: Optional[bool] = False
 
     timeout: Optional[int] = 600
