@@ -28,7 +28,7 @@ class CompletionChoice(BaseResource):
 
 class CompletionObject(BaseResource):
     model: Optional[Union[OpenAIModel, str, Any]] = "davinci"
-    prompt: Optional[str] = '<|endoftext|>'
+    prompt: Optional[Union[str, List[str]]] = '<|endoftext|>'
     suffix: Optional[str] = None
     max_tokens: Optional[int] = 16
     temperature: Optional[float] = 1.0
