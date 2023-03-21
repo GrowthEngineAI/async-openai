@@ -60,10 +60,10 @@ class CompletionObject(BaseResource):
     @validator('max_tokens')
     def validate_max_tokens(cls, v: int) -> int:
         """
-        Max tokens is 4096
+        Max tokens is 4096 / 8192
         https://beta.openai.com/docs/api-reference/completions/create#completions/create-max-tokens
         """
-        return None if v is None else max(0, min(v, 4096))
+        return None if v is None else max(0, min(v, 8192))
     
     @validator('temperature')
     def validate_temperature(cls, v: float) -> float:

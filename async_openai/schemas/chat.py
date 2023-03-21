@@ -1,6 +1,6 @@
 import json
 import aiohttpx
-
+from pydantic import root_validator
 from typing import Optional, Type, Any, Union, List, Dict, Iterator
 from lazyops.types import validator, lazyproperty
 
@@ -37,7 +37,7 @@ class ChatObject(BaseResource):
     messages: Union[List[ChatMessage], str]
     model: Optional[Union[OpenAIModel, str, Any]] = "gpt-3.5-turbo"
 
-    max_tokens: Optional[int] = 2048
+    max_tokens: Optional[int] = None
     temperature: Optional[float] = 1.0
     top_p: Optional[float] = 1.0
     n: Optional[int] = 1
@@ -79,10 +79,10 @@ class ChatObject(BaseResource):
     @validator('max_tokens')
     def validate_max_tokens(cls, v: int) -> int:
         """
-        Max tokens is 4096
+        Max tokens is 4,096 / 8,192 / 32,768
         https://beta.openai.com/docs/api-reference/completions/create#completions/create-max-tokens
         """
-        return None if v is None else max(0, min(v, 4096))
+        return None if v is None else max(0, min(v, 8192))
     
     @validator('temperature')
     def validate_temperature(cls, v: float) -> float:
@@ -124,6 +124,7 @@ class ChatObject(BaseResource):
         """
         return None if v is None else max(0.0, min(v, 2.0))
     
+
 
     def dict(self, *args, exclude: Any = None, **kwargs):
         """
@@ -209,7 +210,8 @@ class ChatResponse(BaseResponse):
                                 'content': choice['delta'].get('content', ''),
                             }
                         }
-                        self.usage.completion_tokens += 1
+                        # every message follows <im_start>{role/name}\n{content}<im_end>\n
+                        self.usage.completion_tokens += 4
 
                     elif choice['finish_reason'] != 'stop':
                         for k,v in choice['delta'].items():
@@ -218,6 +220,7 @@ class ChatResponse(BaseResponse):
 
                     else:
                         results[n]['finish_reason'] = choice['finish_reason']
+                        self.usage.completion_tokens += 2  # every reply is primed with <im_start>assistant
                         yield results.pop(n)
 
             except Exception as e:
@@ -268,8 +271,8 @@ class ChatRoute(BaseRoute):
         :max_tokens (optional): The maximum number of tokens to generate in the completion.
         The token count of your prompt plus `max_tokens` cannot exceed the model's context length. 
         Most models have a context length of 2048 tokens (except for the newest models, which 
-        support 4096).
-        Default: `4096`
+        support 4096 / 8182 / 32,768). If max_tokens is not provided, the model will use the maximum number of tokens
+        Default: None
 
         :temperature (optional): What sampling temperature to use. Higher values means 
         the model will take more risks. Try 0.9 for more creative applications, and 0 (argmax sampling) 
