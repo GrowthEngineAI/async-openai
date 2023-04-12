@@ -1,14 +1,14 @@
 import json
 import aiohttpx
-from pydantic import root_validator
+from pydantic import root_validator, Field
 from typing import Optional, Type, Any, Union, List, Dict, Iterator
 from lazyops.types import validator, lazyproperty
 
-from async_openai.types.options import OpenAIModel
-from async_openai.types.resources import BaseResource
+from async_openai.types.options import OpenAIModel, get_consumption_cost
+from async_openai.types.resources import BaseResource, Usage
 from async_openai.types.responses import BaseResponse
 from async_openai.types.routes import BaseRoute
-from async_openai.utils import logger
+from async_openai.utils import logger, get_max_tokens, get_token_count
 
 
 
@@ -48,6 +48,7 @@ class ChatObject(BaseResource):
     frequency_penalty: Optional[float] = 0.0
     logit_bias: Optional[Dict[str, float]] = None
     user: Optional[str] = None
+    validate_max_tokens: Optional[bool] = Field(default = True, exclude = True)
 
     @validator('messages', pre = True, always = True)
     def validate_messages(cls, v) -> List[ChatMessage]:
@@ -76,13 +77,13 @@ class ChatObject(BaseResource):
             return OpenAIModel(**v)
         return OpenAIModel(value = v, mode = 'chat')
 
-    @validator('max_tokens')
-    def validate_max_tokens(cls, v: int) -> int:
-        """
-        Max tokens is 4,096 / 8,192 / 32,768
-        https://beta.openai.com/docs/api-reference/completions/create#completions/create-max-tokens
-        """
-        return None if v is None else max(0, min(v, 8192))
+    # @validator('max_tokens')
+    # def validate_max_tokens(cls, v: int) -> int:
+    #     """
+    #     Max tokens is 4,096 / 8,192 / 32,768
+    #     https://beta.openai.com/docs/api-reference/completions/create#completions/create-max-tokens
+    #     """
+    #     return None if v is None else max(0, min(v, 8192))
     
     @validator('temperature')
     def validate_temperature(cls, v: float) -> float:
@@ -123,8 +124,6 @@ class ChatObject(BaseResource):
         https://beta.openai.com/docs/api-reference/completions/create#completions/create-frequency-penalty
         """
         return None if v is None else max(0.0, min(v, 2.0))
-    
-
 
     def dict(self, *args, exclude: Any = None, **kwargs):
         """
@@ -133,8 +132,32 @@ class ChatObject(BaseResource):
         data = super().dict(*args, exclude = exclude, **kwargs)
         # data['stream'] = False
         if data.get('model'):
-            data['model'] = data['model'].value
+            data['model'] = data['model'].src_value
+        # if data['max_tokens'] is None:
+        #     del data['max_tokens']
         return data
+    
+    @root_validator()
+    def validate_obj(cls, data: Dict):
+        """
+        Validate the object
+        """
+        input_text = '\n'.join([f'{msg.role}: {msg.content}' for msg in data['messages']])
+        if data['max_tokens'] is not None and data['max_tokens'] <= 0:
+            data['max_tokens'] = get_max_tokens(
+                text = input_text,
+                model_name = data['model'].src_value,
+            )
+        elif data['validate_max_tokens'] and data['max_tokens']:
+            data['max_tokens'] = min(
+                data['max_tokens'], 
+                get_max_tokens(
+                    text = input_text, 
+                    model_name = data['model'].src_value
+                )
+        )
+        return data
+
 
 
 class ChatResponse(BaseResponse):
@@ -147,6 +170,13 @@ class ChatResponse(BaseResponse):
         if self.choices_results:
             return [choice.message for choice in self.choices]
         return self._response.text
+
+    @lazyproperty
+    def input_text(self) -> str:
+        """
+        Returns the input text for the input prompt
+        """
+        return '\n'.join([f'{msg.role}: {msg.content}' for msg in self._input_object.messages])
 
     @lazyproperty
     def text(self) -> str:
@@ -162,16 +192,42 @@ class ChatResponse(BaseResponse):
         """
         Returns the model for the completions
         """
-        return OpenAIModel(value=self.model, mode='chat') if self.model else None
+        return self._input_object.model if self._input_object.model else None
+        # return OpenAIModel(value=self.model, mode='chat') if self.model else None
     
+    @lazyproperty
+    def openai_model(self):
+        """
+        Returns the model for the completions
+        """
+        return self.headers.get('openai-model', self.model)
+    
+    def _validate_usage(self):
+        """
+        Validate usage
+        """
+        if self.usage and self.usage.total_tokens and self.usage.prompt_tokens: return
+        if self._response.status_code == 200:
+            self.usage = Usage(
+                prompt_tokens = get_token_count(self.input_text),
+                completion_tokens = get_token_count(self.text),
+            )
+            self.usage.total_tokens = self.usage.prompt_tokens + self.usage.completion_tokens
+
+
     @lazyproperty
     def consumption(self) -> int:
         """
         Returns the consumption for the completions
         """ 
-        if self.usage and self.chat_model:
-            return self.chat_model.get_cost(total_tokens = self.usage.total_tokens)
-        return None
+        self._validate_usage()
+        return get_consumption_cost(
+            model_name = self.openai_model,
+            mode = 'chat',
+            prompt_tokens = self.usage.prompt_tokens,
+            completion_tokens = self.usage.completion_tokens,
+            total_tokens = self.usage.total_tokens,
+        )
 
 
     def dict(self, *args, exclude: Any = None, **kwargs):
@@ -228,6 +284,11 @@ class ChatResponse(BaseResponse):
         
         yield from results.values()
         self.usage.total_tokens = self.usage.completion_tokens
+        if not self.usage.prompt_tokens:
+            self.usage.prompt_tokens = get_token_count(
+                text = self.input_text,
+                model_name = self.chat_model.src_value,
+            )
 
 
 class ChatRoute(BaseRoute):

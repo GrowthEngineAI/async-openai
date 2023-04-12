@@ -1,4 +1,7 @@
 # Changelogs
+- 0.0.17 (2023-04-12)
+  - Add better support for chatgpt models and `gpt-4`
+  - Better validation `max_tokens`
 
 - 0.0.11 (2023-03-07)
   - Added support for GPT-3.5 Turbo through `async_openai.OpenAI.chat`

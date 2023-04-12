@@ -1,7 +1,7 @@
 from typing import Optional, Type, Any, Union, List, Dict
 from lazyops.types import validator, lazyproperty
 
-from async_openai.types.options import OpenAIModel, OpenAIModelType
+from async_openai.types.options import OpenAIModel
 from async_openai.types.resources import BaseResource
 from async_openai.types.responses import BaseResponse
 from async_openai.types.routes import BaseRoute

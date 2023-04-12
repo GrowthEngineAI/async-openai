@@ -74,8 +74,8 @@ class OpenAIClient:
             max_retries = self.max_retries,
             **self._kwargs
         )
-        logger.info(f"OpenAI Client initialized: {self.client.base_url}")
         if self.debug_enabled:
+            logger.info(f"OpenAI Client initialized: {self.client.base_url}")
             logger.debug(f"Debug Enabled: {self.debug_enabled}")
 
 

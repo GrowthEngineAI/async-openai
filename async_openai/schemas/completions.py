@@ -1,14 +1,15 @@
-import aiohttpx
 import json
+import aiohttpx
 
+from pydantic import root_validator, Field
 from typing import Optional, Type, Any, Union, List, Dict, Iterator
 from lazyops.types import validator, lazyproperty
 
-from async_openai.types.options import OpenAIModel, OpenAIModelType
-from async_openai.types.resources import BaseResource
+from async_openai.types.options import OpenAIModel, get_consumption_cost
+from async_openai.types.resources import BaseResource, Usage
 from async_openai.types.responses import BaseResponse
 from async_openai.types.routes import BaseRoute
-from async_openai.utils import logger
+from async_openai.utils import logger, get_max_tokens, get_token_count
 
 
 __all__ = [
@@ -43,6 +44,7 @@ class CompletionObject(BaseResource):
     best_of: Optional[int] = 1
     logit_bias: Optional[Dict[str, float]] = None
     user: Optional[str] = None
+    validate_max_tokens: Optional[bool] = Field(default = True, exclude = True)
 
     @validator('model', pre=True, always=True)
     def validate_model(cls, v, values: Dict[str, Any]) -> OpenAIModel:
@@ -57,13 +59,13 @@ class CompletionObject(BaseResource):
             return OpenAIModel(**v)
         return OpenAIModel(value = v, mode = 'completion')
 
-    @validator('max_tokens')
-    def validate_max_tokens(cls, v: int) -> int:
-        """
-        Max tokens is 4096 / 8192
-        https://beta.openai.com/docs/api-reference/completions/create#completions/create-max-tokens
-        """
-        return None if v is None else max(0, min(v, 8192))
+    # @validator('max_tokens')
+    # def validate_max_tokens(cls, v: int) -> int:
+    #     """
+    #     Max tokens is 4096 / 8192
+    #     https://beta.openai.com/docs/api-reference/completions/create#completions/create-max-tokens
+    #     """
+    #     return None if v is None else max(0, min(v, 8192))
     
     @validator('temperature')
     def validate_temperature(cls, v: float) -> float:
@@ -113,6 +115,28 @@ class CompletionObject(BaseResource):
         data = super().dict(*args, exclude = exclude, **kwargs)
         if data.get('model'):
             data['model'] = data['model'].value
+        # if data['max_tokens'] is None:
+        #     del data['max_tokens']
+        return data
+    
+    @root_validator()
+    def validate_obj(cls, data: Dict):
+        """
+        Validate the object
+        """
+        if data['max_tokens'] is not None and data['max_tokens'] <= 0:
+            data['max_tokens'] = get_max_tokens(
+                text = data['prompt'],
+                model_name = data['model'].value,
+            )
+        elif data['validate_max_tokens'] and data['max_tokens']:
+            data['max_tokens'] = min(
+                data['max_tokens'], 
+                get_max_tokens(
+                    text = data['prompt'], 
+                    model_name = data['model'].value
+                )
+            )
         return data
 
 
@@ -121,6 +145,7 @@ class CompletionObject(BaseResource):
 class CompletionResponse(BaseResponse):
     choices: Optional[List[CompletionChoice]]
     choice_model: Optional[Type[BaseResource]] = CompletionChoice
+    _input_object: Optional[CompletionObject] = None
 
     @lazyproperty
     def text(self) -> str:
@@ -132,20 +157,45 @@ class CompletionResponse(BaseResponse):
         return self._response.text
     
     @lazyproperty
+    def openai_model(self):
+        """
+        Returns the model for the completions
+        """
+        return self.headers.get('openai-model', self.model)
+
+    
+    @lazyproperty
     def completion_model(self):
         """
         Returns the model for the completions
         """
         return OpenAIModel(value=self.model, mode='completion') if self.model else None
-    
+
+    def _validate_usage(self):
+        """
+        Validate usage
+        """
+        if self.usage and self.usage.total_tokens: return
+        if self._response.status_code == 200:
+            self.usage = Usage(
+                prompt_tokens = get_token_count(self._input_object.prompt),
+                completion_tokens = get_token_count(self.text),
+            )
+            self.usage.total_tokens = self.usage.prompt_tokens + self.usage.completion_tokens
+
     @lazyproperty
     def consumption(self) -> int:
         """
         Returns the consumption for the completions
         """ 
-        if self.usage and self.completion_model:
-            return self.completion_model.get_cost(total_tokens = self.usage.total_tokens)
-        return None
+        self._validate_usage()
+        return get_consumption_cost(
+            model_name = self.openai_model,
+            mode = 'completion',
+            total_tokens = self.usage.total_tokens,
+            prompt_tokens = self.usage.prompt_tokens,
+            completion_tokens = self.usage.completion_tokens,
+        )
 
 
     def dict(self, *args, exclude: Any = None, **kwargs):

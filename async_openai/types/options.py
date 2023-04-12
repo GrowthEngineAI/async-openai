@@ -47,6 +47,84 @@ _chat_prices = {
     'gpt-3.5-turbo': 0.002,
 }
 
+_chat_gpt4_prices = {
+    'gpt-4-32k': {
+        'prompt': 0.06,
+        'completion': 0.12,
+    },
+    'gpt-4': {
+        'prompt': 0.03,
+        'completion': 0.06,
+    },
+}
+
+_cost_modes = {
+    'embedding': _embedding_prices,
+    'train': _finetune_training_prices,
+    'finetune': _finetune_usage_prices,
+    'completion': _completion_prices,
+}
+
+def get_arch(
+    model_name: str,
+) -> str:
+    """
+    Get the arch
+    """
+    for arch in {
+        'babbage',
+        'curie',
+        'davinci',
+        'ada',
+    }:
+        if arch in model_name:
+            return arch
+
+def get_consumption_cost(
+    model_name: str,
+    total_tokens: int = 1,
+    default_token_cost: Optional[float] = 0.00001,
+    prompt_tokens: Optional[int] = None,
+    completion_tokens: Optional[int] = None,
+    mode: Optional[str] = None,
+) -> float:
+    """
+    Returns the total cost of the model
+    usage
+    """
+    if prompt_tokens and completion_tokens:
+        total_tokens = prompt_tokens + completion_tokens
+    if (not mode or mode == 'chat') and any(
+        arch in model_name for arch in {
+            'gpt-3.5',
+            'gpt-4',
+        }):
+            return next(
+                (
+                    (
+                        prompt_tokens * (_chat_gpt4_prices[gpt4_model]['prompt'] / 1000)
+                    )
+                    + (
+                        completion_tokens * (_chat_gpt4_prices[gpt4_model]['completion'] / 1000)
+                    )
+                    if prompt_tokens and completion_tokens
+                    else total_tokens
+                    * (
+                        (
+                            (_chat_gpt4_prices[gpt4_model]['prompt'] + _chat_gpt4_prices[gpt4_model]['completion']) / 2
+                        )
+                        / 1000
+                    )
+                    for gpt4_model in _chat_gpt4_prices
+                    if gpt4_model in model_name
+                ),
+                total_tokens * (_chat_prices['gpt-3.5-turbo'] / 1000),
+            )
+
+    arch = get_arch(model_name)
+    return  total_tokens * (_cost_modes[mode][arch] / 1000) if mode in _cost_modes else total_tokens * default_token_cost
+
+
 
 class ApiType(str, Enum):
     azure = "azure"
@@ -108,7 +186,7 @@ class OpenAIModelType(str, Enum):
             return cls.audio
         elif "code" in value:
             return cls.code
-        elif "gpt-3.5" in value or "chat" in value:
+        elif "gpt-3.5" in value or "gpt-4" in value or "chat" in value:
             return cls.chat
         return cls.custom
 
@@ -123,6 +201,7 @@ class OpenAIModelArch(str, Enum):
     babbage = "babbage"
     ada = "ada"
     chat = "gpt-3.5"
+    chat_gpt4 = "gpt-4"
     custom = "custom"
 
     @classmethod
@@ -136,6 +215,8 @@ class OpenAIModelArch(str, Enum):
             return cls.babbage
         elif "ada" in value:
             return cls.ada
+        elif "gpt-4" in value:
+            return cls.chat_gpt4
         elif "gpt-3.5" in value or "chat" in value:
             return cls.chat
         return cls.custom
@@ -159,7 +240,7 @@ class OpenAIModelArch(str, Enum):
     
     @lazyproperty
     def chat_model(self):
-        return 'gpt-3.5-turbo'
+        return 'gpt-3.5-turbo' if self.value == 'gpt-3.5' else self.value
     
     @lazyproperty
     def finetune_model(self):
@@ -200,7 +281,7 @@ class ModelMode(str, Enum):
             return cls.search
         if "similiarity" in value:
             return cls.similiarity
-        if "chat" in value or "gpt-3.5" in value:
+        if "gpt-3.5" in value or 'gpt-4' in value or "chat" in value:
             return cls.chat
         if "text" in value:
             return cls.completion
@@ -247,8 +328,8 @@ class OpenAIModel(object):
             ver_values = [x for x in self.src_splits if x[0].isdigit()]
             if ver_values:
                 self.version = '-'.join(ver_values)
-                if self.mode ==  ModelMode.chat:
-                    if self.version == '3.5':
+                if self.mode in {ModelMode.chat}:
+                    if self.version in {'3.5', '4'}:
                         self.version = None
                     else:
                         self.version = self.version.rsplit('-', 1)[-1]
@@ -305,16 +386,41 @@ class OpenAIModel(object):
         mode: Optional[str] = None,
         raise_error: bool = True,
         default_token_cost: Optional[float] = 0.00001,
+        prompt_tokens: Optional[int] = None,
+        completion_tokens: Optional[int] = None,
     ) -> float:
         """
         Returns the total cost of the model
         usage
         """
+        if prompt_tokens and completion_tokens:
+            total_tokens = prompt_tokens + completion_tokens
+
         mode = mode or self.mode.value
         if mode in {'completion', 'edit'}:
             return total_tokens * (_completion_prices[self.model_arch.value] / 1000)
         if mode in {'chat'}:
-            return total_tokens * (_chat_prices['gpt-3.5-turbo'] / 1000)
+            return next(
+                (
+                    (
+                        prompt_tokens * (_chat_gpt4_prices[gpt4_model]['prompt'] / 1000)
+                    )
+                    + (
+                        completion_tokens * (_chat_gpt4_prices[gpt4_model]['completion'] / 1000)
+                    )
+                    if prompt_tokens and completion_tokens
+                    else total_tokens
+                    * (
+                        (
+                            (_chat_gpt4_prices[gpt4_model]['prompt'] + _chat_gpt4_prices[gpt4_model]['completion']) / 2
+                        )
+                        / 1000
+                    )
+                    for gpt4_model in _chat_gpt4_prices
+                    if gpt4_model in self.src_value
+                ),
+                total_tokens * (_chat_prices['gpt-3.5-turbo'] / 1000),
+            )
         if 'embedding' in mode:
             return total_tokens * (_embedding_prices[self.model_arch.value]  / 1000)
         if 'train' in mode:

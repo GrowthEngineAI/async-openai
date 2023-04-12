@@ -15,6 +15,7 @@ requirements = [
     'aiohttpx',
     'file-io',
     'backoff',
+    'tiktoken',
 ]
 
 if sys.version_info.minor < 8:
