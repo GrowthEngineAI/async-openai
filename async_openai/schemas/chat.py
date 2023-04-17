@@ -147,14 +147,14 @@ class ChatObject(BaseResource):
             data['max_tokens'] = get_max_tokens(
                 text = input_text,
                 model_name = data['model'].src_value,
-            )
+            ) - 10
         elif data['validate_max_tokens'] and data['max_tokens']:
             data['max_tokens'] = min(
                 data['max_tokens'], 
-                get_max_tokens(
+                (get_max_tokens(
                     text = input_text, 
                     model_name = data['model'].src_value
-                )
+                ) - 10 )
         )
         return data
 
@@ -192,7 +192,7 @@ class ChatResponse(BaseResponse):
         """
         Returns the model for the completions
         """
-        return self._input_object.model if self._input_object.model else None
+        return self._input_object.model or None
         # return OpenAIModel(value=self.model, mode='chat') if self.model else None
     
     @lazyproperty

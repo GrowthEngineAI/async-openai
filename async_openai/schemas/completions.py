@@ -128,14 +128,14 @@ class CompletionObject(BaseResource):
             data['max_tokens'] = get_max_tokens(
                 text = data['prompt'],
                 model_name = data['model'].value,
-            )
+            ) - 5
         elif data['validate_max_tokens'] and data['max_tokens']:
             data['max_tokens'] = min(
                 data['max_tokens'], 
-                get_max_tokens(
+                (get_max_tokens(
                     text = data['prompt'], 
                     model_name = data['model'].value
-                )
+                ) - 5)
             )
         return data
 
