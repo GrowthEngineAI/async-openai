@@ -1,5 +1,6 @@
 import functools
 import tiktoken
+from typing import Optional
 
 def modelname_to_contextsize(modelname: str) -> int:
     """
@@ -83,8 +84,15 @@ def get_token_count(
 def get_max_tokens(
     text: str,
     model_name: str,
+    max_tokens: Optional[int] = None
 ):
     """
     Returns the maximum number of tokens that can be generated for a model.
     """
-    return modelname_to_contextsize(model_name) - get_token_count(text, model_name)
+    max_model_tokens = modelname_to_contextsize(model_name)
+    text_tokens = get_token_count(text, model_name)
+    max_input_tokens = max_model_tokens - text_tokens
+    if max_tokens is None:
+        return max_input_tokens
+    return min(max_input_tokens, max_tokens)
+    # return modelname_to_contextsize(model_name) - get_token_count(text, model_name)

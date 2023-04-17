@@ -149,13 +149,18 @@ class ChatObject(BaseResource):
                 model_name = data['model'].src_value,
             ) - 10
         elif data['validate_max_tokens'] and data['max_tokens']:
-            data['max_tokens'] = min(
-                data['max_tokens'], 
-                (get_max_tokens(
-                    text = input_text, 
-                    model_name = data['model'].src_value
-                ) - 10 )
-        )
+            data['max_tokens'] = get_max_tokens(
+                text = input_text,
+                model_name = data['model'].src_value,
+                max_tokens = data['max_tokens']
+            ) - 10
+            # data['max_tokens'] = min(
+            #     data['max_tokens'], 
+            #     (get_max_tokens(
+            #         text = input_text, 
+            #         model_name = data['model'].src_value
+            #     ) - 10 )
+        # )
         return data
 
 
