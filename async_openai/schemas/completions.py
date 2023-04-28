@@ -28,8 +28,9 @@ class CompletionChoice(BaseResource):
 
 
 class CompletionObject(BaseResource):
+    prompt: Union[List[str], str] = '<|endoftext|>'
     model: Optional[Union[OpenAIModel, str, Any]] = "davinci"
-    prompt: Optional[Union[str, List[str]]] = '<|endoftext|>'
+    # prompt: Optional[Union[List[str], str]] = '<|endoftext|>'
     suffix: Optional[str] = None
     max_tokens: Optional[int] = 16
     temperature: Optional[float] = 1.0
@@ -38,7 +39,7 @@ class CompletionObject(BaseResource):
     stream: Optional[bool] = False
     logprobs: Optional[int] = None
     echo: Optional[bool] = False
-    stop: Optional[Union[str, List[str]]] = None
+    stop: Optional[Union[List[str], str]] = None
     presence_penalty: Optional[float] = 0.0
     frequency_penalty: Optional[float] = 0.0
     best_of: Optional[int] = 1
@@ -59,13 +60,6 @@ class CompletionObject(BaseResource):
             return OpenAIModel(**v)
         return OpenAIModel(value = v, mode = 'completion')
 
-    # @validator('max_tokens')
-    # def validate_max_tokens(cls, v: int) -> int:
-    #     """
-    #     Max tokens is 4096 / 8192
-    #     https://beta.openai.com/docs/api-reference/completions/create#completions/create-max-tokens
-    #     """
-    #     return None if v is None else max(0, min(v, 8192))
     
     @validator('temperature')
     def validate_temperature(cls, v: float) -> float:
@@ -115,35 +109,21 @@ class CompletionObject(BaseResource):
         data = super().dict(*args, exclude = exclude, **kwargs)
         if data.get('model'):
             data['model'] = data['model'].value
-        # if data['max_tokens'] is None:
-        #     del data['max_tokens']
         return data
     
     @root_validator()
-    def validate_obj(cls, data: Dict):
+    def validate_obj(cls, values: Dict[str, Any]) -> Dict[str, Any]:
         """
         Validate the object
         """
-        if data['max_tokens'] is not None and data['max_tokens'] <= 0:
-            data['max_tokens'] = get_max_tokens(
-                text = data['prompt'],
-                model_name = data['model'].value,
-            )#  - 5
-        elif data['validate_max_tokens'] and data['max_tokens']:
-            data['max_tokens'] = get_max_tokens(
-                text = data['prompt'],
-                model_name = data['model'].value,
-                max_tokens = data['max_tokens']
-            )#  - 5
-        
-            # data['max_tokens'] = min(
-            #     data['max_tokens'], 
-            #     (get_max_tokens(
-            #         text = data['prompt'], 
-            #         model_name = data['model'].value
-            #     ) - 5)
-            # )
-        return data
+        if (values['validate_max_tokens'] and values.get('max_tokens')) \
+            or (values.get('max_tokens') is not None and values['max_tokens'] <= 0):
+            values['max_tokens'] = get_max_tokens(
+                text = values['prompt'],
+                max_tokens = values.get('max_tokens'),
+                model_name = values['model'].value,
+            )        
+        return values
 
 
     
@@ -266,7 +246,7 @@ class CompletionRoute(BaseRoute):
     
     def create(
         self, 
-        input_object: Optional[Type[BaseResource]] = None,
+        input_object: Optional[CompletionObject] = None,
         **kwargs
     ) -> CompletionResponse:
         """
@@ -379,7 +359,7 @@ class CompletionRoute(BaseRoute):
 
     async def async_create(
         self, 
-        input_object: Optional[Type[BaseResource]] = None,
+        input_object: Optional[CompletionObject] = None,
         **kwargs
     ) -> CompletionResponse:
         """

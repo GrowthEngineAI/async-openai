@@ -8,7 +8,7 @@ from async_openai.types.options import OpenAIModel, get_consumption_cost
 from async_openai.types.resources import BaseResource, Usage
 from async_openai.types.responses import BaseResponse
 from async_openai.types.routes import BaseRoute
-from async_openai.utils import logger, get_max_tokens, get_token_count
+from async_openai.utils import logger, get_max_chat_tokens
 
 
 
@@ -20,16 +20,27 @@ __all__ = [
     'CompletionRoute',
 ]
 
+# TODO Add support for name
 class ChatMessage(BaseResource):
     content: str
     role: Optional[str] = "user"
-     
+    name: Optional[str] = None
+
+    def dict(self, *args, exclude_none: bool = True, **kwargs):
+        return super().dict(*args, exclude_none = exclude_none, **kwargs)
+
+    def get(self, key: str, default: Any = None, **kwargs) -> Any:
+        """
+        Mimic dict
+        """
+        return getattr(self, key, default)
+
+
 class ChatChoice(BaseResource):
     message: ChatMessage
     index: int
     logprobs: Optional[Any]
     finish_reason: Optional[str]
-
 
 
 
@@ -77,13 +88,6 @@ class ChatObject(BaseResource):
             return OpenAIModel(**v)
         return OpenAIModel(value = v, mode = 'chat')
 
-    # @validator('max_tokens')
-    # def validate_max_tokens(cls, v: int) -> int:
-    #     """
-    #     Max tokens is 4,096 / 8,192 / 32,768
-    #     https://beta.openai.com/docs/api-reference/completions/create#completions/create-max-tokens
-    #     """
-    #     return None if v is None else max(0, min(v, 8192))
     
     @validator('temperature')
     def validate_temperature(cls, v: float) -> float:
@@ -138,32 +142,21 @@ class ChatObject(BaseResource):
         return data
     
     @root_validator()
-    def validate_obj(cls, data: Dict):
+    def validate_obj(cls, values: Dict[str, Any]) -> Dict[str, Any]:
         """
         Validate the object
         """
-        input_text = '\n'.join([f'{msg.role}: {msg.content}' for msg in data['messages']])
-        if data['max_tokens'] is not None and data['max_tokens'] <= 0:
-            data['max_tokens'] = get_max_tokens(
-                text = input_text,
-                model_name = data['model'].src_value,
-            )#  - 10
-        elif data['validate_max_tokens'] and data['max_tokens']:
-            data['max_tokens'] = get_max_tokens(
-                text = input_text,
-                model_name = data['model'].src_value,
-                max_tokens = data['max_tokens']
-            )#  - 10
-            # data['max_tokens'] = min(
-            #     data['max_tokens'], 
-            #     (get_max_tokens(
-            #         text = input_text, 
-            #         model_name = data['model'].src_value
-            #     ) - 10 )
-        # )
-        # if data.get('max_tokens') and data['max_tokens'] > 4085:
-        #     data['max_tokens'] -= 10
-        return data
+        # Auto validate max tokens
+        # if values['validate_max_tokens'] or (values.get('max_tokens') is not None and values['max_tokens'] <= 0):
+        if (values['validate_max_tokens'] and values.get('max_tokens')) \
+            or (values.get('max_tokens') is not None and values['max_tokens'] <= 0):
+            values['max_tokens'] = get_max_chat_tokens(
+                messages = values['messages'],
+                model_name = values['model'].src_value,
+                max_tokens = values.get('max_tokens')
+            )
+        
+        return values
 
 
 
@@ -186,6 +179,13 @@ class ChatResponse(BaseResponse):
         return '\n'.join([f'{msg.role}: {msg.content}' for msg in self._input_object.messages])
 
     @lazyproperty
+    def input_messages(self) -> List[ChatMessage]:
+        """
+        Returns the input messages for the input prompt
+        """
+        return self._input_object.messages
+
+    @lazyproperty
     def text(self) -> str:
         """
         Returns the text for the chat response
@@ -193,6 +193,7 @@ class ChatResponse(BaseResponse):
         if self.choices_results:
             return '\n'.join([f'{msg.role}: {msg.content}' for msg in self.messages])
         return self._response.text
+
 
     @lazyproperty
     def chat_model(self):
@@ -216,8 +217,10 @@ class ChatResponse(BaseResponse):
         if self.usage and self.usage.total_tokens and self.usage.prompt_tokens: return
         if self._response.status_code == 200:
             self.usage = Usage(
-                prompt_tokens = get_token_count(self.input_text),
-                completion_tokens = get_token_count(self.text),
+                # prompt_tokens = get_token_count(self.input_text),
+                # completion_tokens = get_token_count(self.text),
+                prompt_tokens = get_max_chat_tokens(self.input_messages, model_name = self.chat_model.src_value),
+                completion_tokens = get_max_chat_tokens(self.messages, model_name = self.chat_model.src_value),
             )
             self.usage.total_tokens = self.usage.prompt_tokens + self.usage.completion_tokens
 
@@ -292,10 +295,14 @@ class ChatResponse(BaseResponse):
         yield from results.values()
         self.usage.total_tokens = self.usage.completion_tokens
         if not self.usage.prompt_tokens:
-            self.usage.prompt_tokens = get_token_count(
-                text = self.input_text,
-                model_name = self.chat_model.src_value,
+            self.usage.prompt_tokens = get_max_chat_tokens(
+                self.input_messages, 
+                model_name = self.chat_model.src_value
             )
+            # self.usage.prompt_tokens = get_token_count(
+            #     text = self.input_text,
+            #     model_name = self.chat_model.src_value,
+            # )
 
 
 class ChatRoute(BaseRoute):

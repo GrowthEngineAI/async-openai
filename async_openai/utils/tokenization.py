@@ -1,6 +1,11 @@
+from __future__ import annotations
+
 import functools
 import tiktoken
-from typing import Optional
+from typing import Optional, Union, List, Dict, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from async_openai.schemas.chat import ChatMessage
 
 def modelname_to_contextsize(modelname: str) -> int:
     """
@@ -70,7 +75,7 @@ def get_encoder(
     
     return tiktoken.get_encoding(encoder)
 
-@functools.lru_cache(maxsize = 512)
+@functools.lru_cache(maxsize = 2048)
 def get_token_count(
     text: str,
     model_name: str,
@@ -82,17 +87,47 @@ def get_token_count(
 
 
 def get_max_tokens(
-    text: str,
+    text: Union[str, List[str]],
     model_name: str,
-    max_tokens: Optional[int] = None
+    max_tokens: Optional[int] = None,
+    padding_token_count: Optional[int] = 16 # tokens added to make sure we do not go over the limit
 ):
     """
     Returns the maximum number of tokens that can be generated for a model.
     """
-    max_model_tokens = modelname_to_contextsize(model_name)
-    text_tokens = get_token_count(text, model_name)
+    max_model_tokens = modelname_to_contextsize(model_name) - padding_token_count
+    if isinstance(text, list):
+        all_text_tokens = [get_token_count(t, model_name) for t in text]
+        text_tokens = max(all_text_tokens)
+    else:
+        text_tokens = get_token_count(text, model_name)
     max_input_tokens = max_model_tokens - text_tokens
     if max_tokens is None:
         return max_input_tokens
     return min(max_input_tokens, max_tokens)
     # return modelname_to_contextsize(model_name) - get_token_count(text, model_name)
+
+def get_max_chat_tokens(
+    messages: List[Union[Dict[str, str], 'ChatMessage']],
+    model_name: str,
+    max_tokens: Optional[int] = None,
+    reply_padding_token_count: Optional[int] = 3,
+    message_padding_token_count: Optional[int] = 4,
+    padding_token_count: Optional[int] = 16 # tokens added to make sure we do not go over the li
+):
+    """
+    Returns the maximum number of tokens that can be generated for a model.
+    """
+
+    num_tokens = 0
+    for message in messages:
+        if message.get('name'):
+            num_tokens -= 1
+        num_tokens += message_padding_token_count + get_token_count(message.get('content', ''), model_name)
+
+    num_tokens += reply_padding_token_count  # every reply is primed with <|start|>assistant<|message|>
+    max_model_tokens = modelname_to_contextsize(model_name) - padding_token_count
+    max_input_tokens = max_model_tokens - num_tokens
+    if max_tokens is None:
+        return max_input_tokens
+    return min(max_input_tokens, max_tokens)
