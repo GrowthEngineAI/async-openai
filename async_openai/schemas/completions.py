@@ -147,7 +147,7 @@ class CompletionResponse(BaseResponse):
         """
         Returns the model for the completions
         """
-        return self.headers.get('openai-model', self.model)
+        return self.headers.get('openai-model', self.completion_model.value)
 
     
     @lazyproperty

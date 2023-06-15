@@ -8,7 +8,7 @@ from async_openai.types.options import OpenAIModel, get_consumption_cost
 from async_openai.types.resources import BaseResource, Usage
 from async_openai.types.responses import BaseResponse
 from async_openai.types.routes import BaseRoute
-from async_openai.utils import logger, get_max_chat_tokens
+from async_openai.utils import logger, get_max_chat_tokens, get_chat_tokens_count
 
 
 
@@ -208,7 +208,7 @@ class ChatResponse(BaseResponse):
         """
         Returns the model for the completions
         """
-        return self.headers.get('openai-model', self.model)
+        return self.headers.get('openai-model', self.chat_model.value)
     
     def _validate_usage(self):
         """
@@ -219,8 +219,10 @@ class ChatResponse(BaseResponse):
             self.usage = Usage(
                 # prompt_tokens = get_token_count(self.input_text),
                 # completion_tokens = get_token_count(self.text),
-                prompt_tokens = get_max_chat_tokens(self.input_messages, model_name = self.chat_model.src_value),
-                completion_tokens = get_max_chat_tokens(self.messages, model_name = self.chat_model.src_value),
+                prompt_tokens = get_chat_tokens_count(self.input_messages, model_name = self.chat_model.src_value),
+                completion_tokens = get_chat_tokens_count(self.messages, model_name = self.chat_model.src_value),
+                # prompt_tokens = get_max_chat_tokens(self.input_messages, model_name = self.chat_model.src_value),
+                # completion_tokens = get_max_chat_tokens(self.messages, model_name = self.chat_model.src_value),
             )
             self.usage.total_tokens = self.usage.prompt_tokens + self.usage.completion_tokens
 
@@ -293,16 +295,12 @@ class ChatResponse(BaseResponse):
                 logger.error(f'Error: {line}: {e}')
         
         yield from results.values()
-        self.usage.total_tokens = self.usage.completion_tokens
         if not self.usage.prompt_tokens:
-            self.usage.prompt_tokens = get_max_chat_tokens(
-                self.input_messages, 
+            self.usage.prompt_tokens = get_chat_tokens_count(
+                messages = self.input_messages, 
                 model_name = self.chat_model.src_value
             )
-            # self.usage.prompt_tokens = get_token_count(
-            #     text = self.input_text,
-            #     model_name = self.chat_model.src_value,
-            # )
+        self.usage.total_tokens = self.usage.completion_tokens + self.usage.prompt_tokens
 
 
 class ChatRoute(BaseRoute):

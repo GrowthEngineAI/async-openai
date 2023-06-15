@@ -16,5 +16,6 @@ from async_openai.utils.tokenization import (
     modelname_to_contextsize,
     get_token_count,
     get_max_tokens,
+    get_chat_tokens_count,
     get_max_chat_tokens,
 )

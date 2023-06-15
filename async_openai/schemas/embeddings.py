@@ -21,7 +21,7 @@ class EmbeddingData(BaseResource):
     index: Optional[int] = 0
 
 class EmbeddingObject(BaseResource):
-    model: Optional[Union[str, OpenAIModel, Any]] = "curie"
+    model: Optional[Union[str, OpenAIModel, Any]] = "ada"
     input: Optional[Union[List[Any], Any]]
     user: Optional[str] = None
 

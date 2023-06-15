@@ -3,6 +3,9 @@ from client import OpenAI
 from async_openai.utils import logger
 
 async def run_test():
+
+    model = "gpt-3.5-turbo-16k"
+
     result = await OpenAI.chat.async_create(
         messages = [
             {"role": "user", "content": "Translate the following English text to French: “Multiple models, each with different capabilities and price points. Prices are per 1,000 tokens. You can think of tokens as pieces of words, where 1,000 tokens is about 750 words. This paragraph is 35 tokens”"}

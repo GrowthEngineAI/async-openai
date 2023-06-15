@@ -18,6 +18,7 @@ def modelname_to_contextsize(modelname: str) -> int:
     code-davinci-002: 8,000 tokens
     code-cushman-001: 2,048 tokens
     gpt-3.5-turbo: 4,096 tokens
+    gpt-3.5-turbo-16k: 16,384 tokens
     gpt-4: 8,192 tokens
     gpt-4-32k: 32,768 tokens
 
@@ -39,10 +40,18 @@ def modelname_to_contextsize(modelname: str) -> int:
         return 2048
 
     elif modelname in {
-        "gpt-3.5-turbo",
-        "gpt-3.5-turbo-0314"
+        "gpt-3.5-turbo-16k",
     }:
+        return 16384
+    
+    elif "gpt-3.5-turbo" in modelname:
         return 4096
+
+    # elif modelname in {
+    #     "gpt-3.5-turbo",
+    #     "gpt-3.5-turbo-0314"
+    # }:
+    #     return 4096
     
     elif modelname in {
         "gpt-4-32k",
@@ -106,6 +115,26 @@ def get_max_tokens(
         return max_input_tokens
     return min(max_input_tokens, max_tokens)
     # return modelname_to_contextsize(model_name) - get_token_count(text, model_name)
+
+
+def get_chat_tokens_count(
+    messages: List[Union[Dict[str, str], 'ChatMessage']],
+    model_name: str,
+    reply_padding_token_count: Optional[int] = 3,
+    message_padding_token_count: Optional[int] = 4,
+    **kwargs
+) -> int:
+    """
+    Returns the number of tokens in the chat.
+    """
+    num_tokens = 0
+    for message in messages:
+        if message.get('name'):
+            num_tokens -= 1
+        num_tokens += message_padding_token_count + get_token_count(message.get('content', ''), model_name)
+
+    num_tokens += reply_padding_token_count  # every reply is primed with <|start|>assistant<|message|>
+    return num_tokens
 
 def get_max_chat_tokens(
     messages: List[Union[Dict[str, str], 'ChatMessage']],

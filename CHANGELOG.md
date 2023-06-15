@@ -1,4 +1,15 @@
 # Changelogs
+
+- v0.0.22 (2023-06-14)
+  - Update pricing to reflect OpenAI's new pricing model
+    - `gpt-3.5-turbo`
+    - `text-embedding-ada-002`
+  - Bugfix for consumption and usage validation in `chat` models
+  - Added support for `gpt-3.5-turbo-16k`
+  - Modified handling of `gpt-3.5-turbo`'s consumption pricing to reflect `prompt` and `completion` usage
+  - Modified default `Embedding` model to be `ada`
+
+
 - 0.0.17 (2023-04-12)
   - Add better support for chatgpt models and `gpt-4`
   - Better validation `max_tokens`
@@ -12,5 +23,6 @@
 
 - 0.0.3 (2022-12-21)
   - Fix proper charge for `babbage` and `ada` models.
+
 
   

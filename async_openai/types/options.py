@@ -37,7 +37,8 @@ _finetune_usage_prices = {
 }
 
 _embedding_prices = {
-    'ada': 0.004,
+    # 'ada': 0.004,
+    'ada': 0.0001,
     'babbage': 0.005,
     'curie': 0.02,
     'davinci': 0.2,
@@ -47,15 +48,24 @@ _chat_prices = {
     'gpt-3.5-turbo': 0.002,
 }
 
-_chat_gpt4_prices = {
+_chat_gpt_prices = {
     'gpt-4-32k': {
         'prompt': 0.06,
         'completion': 0.12,
+    },
+    'gpt-3.5-turbo-16k': {
+        'prompt': 0.003,
+        'completion': 0.004,
     },
     'gpt-4': {
         'prompt': 0.03,
         'completion': 0.06,
     },
+    'gpt-3.5-turbo': {
+        'prompt': 0.0015,
+        'completion': 0.002,
+    },
+
 }
 
 _cost_modes = {
@@ -102,21 +112,21 @@ def get_consumption_cost(
             return next(
                 (
                     (
-                        prompt_tokens * (_chat_gpt4_prices[gpt4_model]['prompt'] / 1000)
+                        prompt_tokens * (_chat_gpt_prices[gpt_model]['prompt'] / 1000)
                     )
                     + (
-                        completion_tokens * (_chat_gpt4_prices[gpt4_model]['completion'] / 1000)
+                        completion_tokens * (_chat_gpt_prices[gpt_model]['completion'] / 1000)
                     )
                     if prompt_tokens and completion_tokens
                     else total_tokens
                     * (
                         (
-                            (_chat_gpt4_prices[gpt4_model]['prompt'] + _chat_gpt4_prices[gpt4_model]['completion']) / 2
+                            (_chat_gpt_prices[gpt_model]['prompt'] + _chat_gpt_prices[gpt_model]['completion']) / 2
                         )
                         / 1000
                     )
-                    for gpt4_model in _chat_gpt4_prices
-                    if gpt4_model in model_name
+                    for gpt_model in _chat_gpt_prices
+                    if gpt_model in model_name
                 ),
                 total_tokens * (_chat_prices['gpt-3.5-turbo'] / 1000),
             )
@@ -325,11 +335,11 @@ class OpenAIModel(object):
                 ("text" if self.mode in ModelMode.get_text_modes() else self.src_value)
             ), raise_error = False)
         if not self.version:
-            ver_values = [x for x in self.src_splits if x[0].isdigit()]
+            ver_values = [x for x in self.src_splits if (x[0].isdigit() and x[-1].isdigit())]
             if ver_values:
                 self.version = '-'.join(ver_values)
                 if self.mode in {ModelMode.chat}:
-                    if self.version in {'3.5', '4'}:
+                    if self.version in {'3.5', '4', '16k', '32k'}:
                         self.version = None
                     else:
                         self.version = self.version.rsplit('-', 1)[-1]
@@ -397,27 +407,27 @@ class OpenAIModel(object):
             total_tokens = prompt_tokens + completion_tokens
 
         mode = mode or self.mode.value
-        if mode in {'completion', 'edit'}:
+        if mode in ['completion', 'edit']:
             return total_tokens * (_completion_prices[self.model_arch.value] / 1000)
-        if mode in {'chat'}:
+        if mode in ['chat']:
             return next(
                 (
                     (
-                        prompt_tokens * (_chat_gpt4_prices[gpt4_model]['prompt'] / 1000)
+                        prompt_tokens * (_chat_gpt_prices[gpt_model]['prompt'] / 1000)
                     )
                     + (
-                        completion_tokens * (_chat_gpt4_prices[gpt4_model]['completion'] / 1000)
+                        completion_tokens * (_chat_gpt_prices[gpt_model]['completion'] / 1000)
                     )
                     if prompt_tokens and completion_tokens
                     else total_tokens
                     * (
                         (
-                            (_chat_gpt4_prices[gpt4_model]['prompt'] + _chat_gpt4_prices[gpt4_model]['completion']) / 2
+                            (_chat_gpt_prices[gpt_model]['prompt'] + _chat_gpt_prices[gpt_model]['completion']) / 2
                         )
                         / 1000
                     )
-                    for gpt4_model in _chat_gpt4_prices
-                    if gpt4_model in self.src_value
+                    for gpt_model in _chat_gpt_prices
+                    if gpt_model in self.src_value
                 ),
                 total_tokens * (_chat_prices['gpt-3.5-turbo'] / 1000),
             )
