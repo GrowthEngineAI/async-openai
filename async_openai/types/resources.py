@@ -5,10 +5,12 @@ from pydantic.types import ByteSize
 from lazyops.types import BaseModel, validator, lazyproperty
 from lazyops.utils import ObjectDecoder
 from async_openai.utils.logs import logger
+from async_openai.utils.helpers import aparse_stream, parse_stream
 from fileio import File, FileType
 
 from async_openai.types.options import FilePurpose
-from typing import Dict, Optional, Any, List, Type, Union, Tuple, Iterator
+
+from typing import Dict, Optional, Any, List, Type, Union, Tuple, Iterator, AsyncIterator, TYPE_CHECKING
 
 __all__ = [
     'BaseResource',
@@ -69,8 +71,19 @@ class BaseResource(BaseModel):
     inherit from
     """
 
+    if TYPE_CHECKING:
+        id: Optional[str]
+        file_id: Optional[str]
+        fine_tune_id: Optional[str]
+        model_id: Optional[str]
+        completion_id: Optional[str]
+        openai_id: Optional[str]
+
     @lazyproperty
     def resource_id(self):
+        """
+        Returns the resource id
+        """
         if hasattr(self, 'id'):
             return self.id
         if hasattr(self, 'file_id'):
@@ -100,6 +113,9 @@ class BaseResource(BaseModel):
     
     @classmethod
     def create_many(cls, data: List[Dict]) -> List['BaseResource']:
+        """
+        Creates many resources
+        """
         # logger.info(f"Creating: {data}")
         return [cls.parse_obj(d) for d in data]
     
@@ -108,6 +124,9 @@ class BaseResource(BaseModel):
         content: Any,
         **kwargs
     ) -> Union[Dict, List]:
+        """
+        Handles the json response
+        """
         return json.loads(content, cls = ObjectDecoder, **kwargs)
 
 
@@ -115,14 +134,24 @@ class BaseResource(BaseModel):
     def handle_stream(
         response: aiohttpx.Response
     ) -> Iterator[Dict]:
-        for line in response.iter_lines():
-            if not line: continue
-            if "data: [DONE]" in line:
-                # return here will cause GeneratorExit exception in urllib3
-                # and it will close http connection with TCP Reset
-                continue
-            if line.startswith("data: "):
-                line = line[len("data: ") :]
+        """
+        Handles the stream response
+        """
+        for line in parse_stream(response):
+            if not line.strip(): continue
+            try:
+                yield json.loads(line)
+            except Exception as e:
+                logger.error(f'Error: {line}: {e}')
+    
+    @staticmethod
+    async def ahandle_stream(
+        response: aiohttpx.Response
+    ) -> AsyncIterator[Dict]:
+        """
+        Handles the stream response
+        """
+        async for line in aparse_stream(response):
             if not line.strip(): continue
             try:
                 yield json.loads(line)

@@ -68,6 +68,8 @@ _chat_gpt_prices = {
 
 }
 
+# TODO rework this module
+
 _cost_modes = {
     'embedding': _embedding_prices,
     'train': _finetune_training_prices,
@@ -148,7 +150,7 @@ class ApiType(str, Enum):
         version: Optional[str] = None
     ):
         if self.value in {"azure", "azure_ad", "azuread"}:
-            return "2022-03-01-preview"
+            return "2023-03-15-preview"
         return version
 
 

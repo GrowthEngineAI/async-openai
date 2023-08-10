@@ -1,8 +1,9 @@
 
 import inspect
+import aiohttpx
 from datetime import datetime, timedelta
 
-from typing import Dict
+from typing import Dict, Optional, Iterator, AsyncIterator, Union
 from lazyops.utils.helpers import timed, timer, is_coro_func
 
 __all__ = [
@@ -14,6 +15,8 @@ __all__ = [
     'is_coro_func',
     'timed',
     'timer',
+    'parse_stream',
+    'aparse_stream',
 ]
 
 
@@ -45,4 +48,67 @@ def total_seconds(delta: timedelta):
 
 
 def remove_trailing_slash(host: str):
+    """
+    Removes trailing slash from a host if it exists.
+    """
     return host[:-1] if host.endswith("/") else host
+
+
+def parse_stream_line_bytes(line: bytes) -> Optional[str]:
+    """
+    Parse a line from a Server-Sent Events stream.
+    """
+    if line:
+        if line.strip() == b"data: [DONE]":
+            # return here will cause GeneratorExit exception in urllib3
+            # and it will close http connection with TCP Reset
+            return None
+        if line.startswith(b"data: "):
+            line = line[len(b"data: "):]
+            return line.decode("utf-8")
+        else:
+            return None
+    return None
+
+
+def parse_stream_line_string(line: str) -> Optional[str]:
+    """
+    Parse a line from a Server-Sent Events stream.
+    """
+    if line:
+        if line.strip() == "data: [DONE]":
+            # return here will cause GeneratorExit exception in urllib3
+            # and it will close http connection with TCP Reset
+            return None
+        return line[len("data: "):] if line.startswith("data: ") else None
+    return None
+
+def parse_stream_line(line: Union[str, bytes]) -> Optional[str]:
+    """
+    Parse a line from a Server-Sent Events stream.
+    """
+    if isinstance(line, bytes):
+        return parse_stream_line_bytes(line)
+    elif isinstance(line, str):
+        return parse_stream_line_string(line)
+    else:
+        raise TypeError("line must be str or bytes")
+
+
+def parse_stream(response: aiohttpx.Response) -> Iterator[str]:
+    """
+    Parse a Server-Sent Events stream.
+    """
+    for line in response.iter_lines():
+        _line = parse_stream_line(line)
+        if _line is not None:
+            yield _line
+
+async def aparse_stream(response: aiohttpx.Response) -> AsyncIterator[str]:
+    """
+    Parse a Server-Sent Events stream.
+    """
+    async for line in response.aiter_lines():
+        _line = parse_stream_line(line)
+        if _line is not None:
+            yield _line

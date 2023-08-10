@@ -5,11 +5,13 @@ from async_openai.utils.helpers import (
     is_naive,
     total_seconds,
     remove_trailing_slash,
+    parse_stream,
+    aparse_stream,
     
 )
 from async_openai.utils.config import (
     OpenAISettings, 
-    settings
+    get_settings
 )
 
 from async_openai.utils.tokenization import (

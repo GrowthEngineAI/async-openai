@@ -29,10 +29,16 @@ class ExceptionModel(BaseModel):
 
     @lazyproperty
     def headers(self):
+        """
+        Returns the response headers.
+        """
         return self.response.headers
     
     @lazyproperty
     def stream(self) -> bool:
+        """
+        Returns True if the response is a streaming response.
+        """
         return "text/event-stream" in self.headers.get("content-type", "")
 
     @lazyproperty

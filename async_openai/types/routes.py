@@ -7,7 +7,7 @@ from lazyops.utils import ObjectEncoder
 from typing import Dict, Optional, Any, List, Type, Callable, Union
 
 from async_openai.utils.logs import logger
-from async_openai.utils.config import settings
+from async_openai.utils.config import get_settings, get_default_headers, get_max_retries, OpenAISettings, AzureOpenAISettings
 from async_openai.types.errors import fatal_exception, error_handler
 from async_openai.types.resources import BaseResource, FileResource
 from async_openai.types.responses import BaseResponse
@@ -31,7 +31,7 @@ RESPONSE_SUCCESS_CODES = [
 
 class BaseRoute(BaseModel):
     client: aiohttpx.Client
-    headers: Dict[str, str] = Field(default_factory = settings.get_headers)
+    headers: Dict[str, str] = Field(default_factory = get_default_headers)
     success_codes: Optional[List[int]] = RESPONSE_SUCCESS_CODES
     
     input_model: Optional[Type[BaseResource]] = None
@@ -44,6 +44,14 @@ class BaseRoute(BaseModel):
     ignore_errors: Optional[bool] = False
     max_retries: Optional[int] = None
 
+    settings: Optional[Union[OpenAISettings, AzureOpenAISettings]] = Field(default_factory = get_settings)
+
+    @property
+    def is_azure(self):
+        """
+        Returns whether the Route is for Azure
+        """
+        return isinstance(self.settings, AzureOpenAISettings)
 
     @lazyproperty
     def api_resource(self):
@@ -93,6 +101,31 @@ class BaseRoute(BaseModel):
     @lazyproperty
     def usage_enabled(self):
         return False
+    
+    def get_resource_url(self, data: Dict[str, Any]) -> str:
+        """
+        Returns the Resource URL from the Response Data
+        """
+        if not self.is_azure: return self.api_resource
+        base_endpoint = self.api_resource
+        deployment = data.get('deployment', data.get('model'))
+        if deployment is not None:
+            base_endpoint = f'/openai/deployments/{deployment}/{base_endpoint}'
+        api_version = data.pop('api_version', self.settings.api_version)
+        return f'{base_endpoint}?api-version={api_version}'
+
+    def encode_data(self, data: Dict[str, Any]) -> str:
+        """
+        Encodes the data
+        """
+        if self.is_azure:
+            _ = data.pop('model', None)
+            _ = data.pop('deployment', None)
+        return json.dumps(
+            data,
+            cls = ObjectEncoder
+        )
+        
 
     def create(
         self, 
@@ -113,16 +146,11 @@ class BaseRoute(BaseModel):
                 **kwargs
             )
         
-        data = json.dumps(
-            input_object.dict(
-                exclude_none = self.exclude_null
-            ), 
-            cls = ObjectEncoder
-        )
+        data = input_object.dict(exclude_none = self.exclude_null)
         api_response = self._send(
             method = 'POST',
-            url = self.api_resource,
-            data = data,
+            url = self.get_resource_url(data = data),
+            data = self.encode_data(data),
             headers = self.headers,
             timeout = self.timeout,
             **kwargs
@@ -130,6 +158,7 @@ class BaseRoute(BaseModel):
         data = self.handle_response(api_response)
         return self.prepare_response(data, input_object = input_object)
     
+
     async def async_create(
         self, 
         input_object: Optional[Type[BaseResource]] = None,
@@ -149,22 +178,17 @@ class BaseRoute(BaseModel):
                 **kwargs
             )
 
-        data = json.dumps(
-            input_object.dict(
-                exclude_none = self.exclude_null
-            ), 
-            cls = ObjectEncoder
-        )
+        data = input_object.dict(exclude_none = self.exclude_null)
         api_response = await self._async_send(
             method = 'POST',
-            url = self.api_resource,
-            data = data,
+            url = self.get_resource_url(data = data),
+            data = self.encode_data(data),
             headers = self.headers,
             timeout = self.timeout,
             **kwargs
         )
         data = self.handle_response(api_response)
-        return self.prepare_response(data, input_object = input_object)
+        return await self.aprepare_response(data, input_object = input_object)
     
     def batch_create(
         self, 
@@ -195,7 +219,7 @@ class BaseRoute(BaseModel):
         )
         api_response = self._send(
             method = 'POST',
-            url = api_resource,
+            url = self.get_resource_url(data = data),
             data = data,
             headers = self.headers,
             timeout = self.timeout,
@@ -240,7 +264,7 @@ class BaseRoute(BaseModel):
             **kwargs
         )
         resp = self.handle_response(api_response)
-        return self.prepare_response(resp, input_object = input_object)
+        return await self.aprepare_response(resp, input_object = input_object)
 
     
     def retrieve(
@@ -775,6 +799,25 @@ class BaseRoute(BaseModel):
             return response_object.prepare_response(data, input_object = input_object)
         raise NotImplementedError('Response model not defined for this resource.')
 
+
+    async def aprepare_response(
+        self, 
+        data: aiohttpx.Response,
+        input_object: Optional[Type[BaseResource]] = None,
+        response_object: Optional[Type[BaseResource]] = None,
+        **kwargs
+    ):
+        """
+        Prepare the Response Object
+        
+        :param data: The Response Data
+        :param response_object: The Response Object
+        """
+        response_object = response_object or self.response_model
+        if response_object:
+            return await response_object.aprepare_response(data, input_object = input_object)
+        raise NotImplementedError('Response model not defined for this resource.')
+
     def handle_response(
         self, 
         response: aiohttpx.Response,
@@ -786,7 +829,7 @@ class BaseRoute(BaseModel):
         :param response: The Response
         """
         if self.debug_enabled:
-            logger.info(f'[{response.status_code} - {response.request.url}] headers: {response.headers}, body: {response.text}')
+            logger.info(f'[{response.status_code} - {response.request.url}] headers: {response.headers}, body: {response.text[:250]}')
         
         if response.status_code in self.success_codes:
             return response if response.content else None
@@ -813,7 +856,7 @@ class BaseRoute(BaseModel):
         **kwargs
     ) -> aiohttpx.Response:
         # if ignore_errors is None: ignore_errors = self.ignore_errors
-        if max_retries is None: max_retries = settings.max_retries
+        if max_retries is None: max_retries = get_max_retries()
         if timeout is None: timeout = self.timeout
         if self.debug_enabled:
             logger.info(f'[{method} - {url}] headers: {headers}, params: {params}, data: {data}')
@@ -846,7 +889,7 @@ class BaseRoute(BaseModel):
         **kwargs
     ) -> aiohttpx.Response:
         # if ignore_errors is None: ignore_errors = self.ignore_errors
-        if max_retries is None: max_retries = settings.max_retries
+        if max_retries is None: max_retries = get_max_retries()
         if timeout is None: timeout = self.timeout
         if self.debug_enabled:
             logger.info(f'[{method} - {url}] headers: {headers}, params: {params}, data: {data}')

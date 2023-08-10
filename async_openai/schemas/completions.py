@@ -2,14 +2,14 @@ import json
 import aiohttpx
 
 from pydantic import root_validator, Field
-from typing import Optional, Type, Any, Union, List, Dict, Iterator
+from typing import Optional, Type, Any, Union, List, Dict, Iterator, AsyncIterator
 from lazyops.types import validator, lazyproperty
 
 from async_openai.types.options import OpenAIModel, get_consumption_cost
 from async_openai.types.resources import BaseResource, Usage
 from async_openai.types.responses import BaseResponse
 from async_openai.types.routes import BaseRoute
-from async_openai.utils import logger, get_max_tokens, get_token_count
+from async_openai.utils import logger, get_max_tokens, get_token_count, parse_stream, aparse_stream
 
 
 __all__ = [
@@ -198,16 +198,12 @@ class CompletionResponse(BaseResponse):
         self,
         response: aiohttpx.Response
     ) -> Iterator[Dict]:
+        """
+        Handles the streaming response
+        """
         texts = {}
-        for line in response.iter_lines():
-            if not line: continue
-            if "data: [DONE]" in line:
-                continue
-            if line.startswith("data: "):
-                line = line[len("data: ") :]
-            if not line.strip(): continue
+        for line in parse_stream(response):
             try:
-
                 item = json.loads(line)
                 self.handle_stream_metadata(item)
                 for n, choice in enumerate(item['choices']):
@@ -229,6 +225,41 @@ class CompletionResponse(BaseResponse):
                 logger.error(f'Error: {line}: {e}')
 
         yield from texts.values()
+        self.usage.total_tokens = self.usage.completion_tokens
+    
+
+    async def ahandle_stream(
+        self,
+        response: aiohttpx.Response
+    ) -> AsyncIterator[Dict]:
+        """
+        Handles the streaming response
+        """
+        texts = {}
+        async for line in aparse_stream(response):
+            try:
+                item = json.loads(line)
+                self.handle_stream_metadata(item)
+                for n, choice in enumerate(item['choices']):
+                    if not texts.get(n):
+                        texts[n] = {
+                            'index': choice['index'],
+                            'text': choice['text'],
+                        }
+                        self.usage.completion_tokens += 1
+                    elif choice['finish_reason'] != 'stop':
+                        texts[n]['text'] += choice['text']
+                        self.usage.completion_tokens += 1
+
+                    else:
+                        texts[n]['finish_reason'] = choice['finish_reason']
+                        yield texts.pop(n)
+
+            except Exception as e:
+                logger.error(f'Error: {line}: {e}')
+
+        for remaining_text in texts.values():
+            yield remaining_text
         self.usage.total_tokens = self.usage.completion_tokens
 
 

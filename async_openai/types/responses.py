@@ -50,18 +50,30 @@ class BaseResponse(BaseResource):
 
     @property
     def has_choices(self):
+        """
+        Returns whether the response has choices
+        """
         return self.choice_model is not None
     
     @property
     def has_data(self):
+        """
+        Returns whether the response has data
+        """
         return self.data_model is not None
     
     @property
     def has_events(self):
+        """
+        Returns whether the response has events
+        """
         return self.event_model is not None
     
     @lazyproperty
     def resource_model(self) -> Type[BaseResource]:
+        """
+        Returns the appropriate resource model
+        """
         if self.has_choices:
             return self.choice_model
         if self.has_data:
@@ -103,51 +115,84 @@ class BaseResponse(BaseResource):
 
     @property
     def since_seconds(self) -> int:
+        """
+        Returns the number of seconds since the response was created
+        """
         return (datetime.datetime.now(datetime.timezone.utc) - self.created).total_seconds() \
             if self.created else -1
     
     @property
     def headers(self) -> Dict[str, str]:
+        """
+        Returns the response headers
+        """
         return self._response.headers if self._response else {}
     
     @property
     def response_json(self) -> Dict:
+        """
+        Returns the response json
+        """
         with contextlib.suppress(Exception):
             return self._response.json() if self._response else {}
         return BaseResource.handle_json(self._response.content) if self._response else {}
 
     @property
     def has_stream(self):
+        """
+        Returns whether the response is a stream
+        """
         return "text/event-stream" in self.headers.get("content-type", "")
     
     @property
     def request_id(self) -> Optional[str]:
+        """
+        Returns the request id
+        """
         return self.headers.get("request-id", self.headers.get("x-request-id"))
     
     @property
     def organization(self) -> str:
+        """
+        Returns the organization
+        """
         return self.headers.get("openai-organization")
 
     @property
     def response_ms(self) -> Optional[int]:
+        """
+        Returns the response time in ms
+        """
         h = self.headers.get("openai-processing-ms")
         return None if h is None else round(float(h))
     
     @property
     def response_timestamp(self) -> Optional[datetime.datetime]:
+        """
+        Returns the response timestamp
+        """
         dt = self.headers.get("date")
         return None if dt is None else datetime.datetime.strptime(dt, '%a, %d %b %Y %H:%M:%S GMT')
 
     @property
     def openai_version(self) -> Optional[str]:
+        """
+        Returns the openai version
+        """
         return self.headers.get("openai-version")
     
     @property
     def openai_model(self) -> Optional[str]:
+        """
+        Returns the openai model
+        """
         return self.headers.get("openai-model")
     
     @property
     def model_name(self) -> Optional[str]:
+        """
+        Returns the model name
+        """
         return self.model.split('-')[1]
     
     """
@@ -299,6 +344,26 @@ class BaseResponse(BaseResource):
             self.handle_resource_item(item = item, **kwargs)
 
 
+    async def aconstruct_resource(
+        self, 
+        **kwargs
+    ):
+        """
+        Constructs the appropriate resource object
+        from the response
+        """
+        if not self.has_stream: return self.handle_resource_item(item = self.response_json, **kwargs)
+        async for item in self.ahandle_stream(response=self._response):
+            if "error" in item:
+                raise error_handler(
+                    response = self._response,
+                    data = item,
+                )
+            
+            self.handle_resource_item(item = item, **kwargs)
+    
+        
+
     @classmethod
     def prepare_response(
         cls, 
@@ -316,6 +381,23 @@ class BaseResponse(BaseResource):
         )
         resource.construct_resource(**kwargs)
         # logger.info(f"Response: {resource}")
+        return resource
+    
+    @classmethod
+    async def aprepare_response(
+        cls, 
+        response: aiohttpx.Response,
+        input_object: Type['BaseResource'],
+        **kwargs
+    ) -> Type['BaseResponse']:
+        """
+        Handles the response and returns the appropriate object
+        """
+        resource = cls(
+            _response = response,
+            _input_object = input_object,
+        )
+        await resource.aconstruct_resource(**kwargs)
         return resource
 
 

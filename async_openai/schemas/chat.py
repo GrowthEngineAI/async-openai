@@ -1,14 +1,14 @@
 import json
 import aiohttpx
 from pydantic import root_validator, Field
-from typing import Optional, Type, Any, Union, List, Dict, Iterator
+from typing import Optional, Type, Any, Union, List, Dict, Iterator, AsyncIterator
 from lazyops.types import validator, lazyproperty
 
 from async_openai.types.options import OpenAIModel, get_consumption_cost
 from async_openai.types.resources import BaseResource, Usage
 from async_openai.types.responses import BaseResponse
 from async_openai.types.routes import BaseRoute
-from async_openai.utils import logger, get_max_chat_tokens, get_chat_tokens_count
+from async_openai.utils import logger, get_max_chat_tokens, get_chat_tokens_count, parse_stream, aparse_stream
 
 
 
@@ -255,17 +255,11 @@ class ChatResponse(BaseResponse):
         self,
         response: aiohttpx.Response
     ) -> Iterator[Dict]:
-
+        """
+        Handle the stream response
+        """
         results = {}
-        for line in response.iter_lines():
-            if not line: continue
-            if "data: [DONE]" in line:
-                # return here will cause GeneratorExit exception in urllib3
-                # and it will close http connection with TCP Reset
-                continue
-            if line.startswith("data: "):
-                line = line[len("data: ") :]
-            if not line.strip(): continue
+        for line in parse_stream(response):
             try:
                 item = json.loads(line)
                 self.handle_stream_metadata(item)
@@ -301,6 +295,54 @@ class ChatResponse(BaseResponse):
                 model_name = self.chat_model.src_value
             )
         self.usage.total_tokens = self.usage.completion_tokens + self.usage.prompt_tokens
+    
+    async def ahandle_stream(
+        self,
+        response: aiohttpx.Response
+    ) -> AsyncIterator[Dict]:
+        """
+        Handles the streaming response
+        """
+        results = {}
+        async for line in aparse_stream(response):
+            try:
+                item = json.loads(line)
+                self.handle_stream_metadata(item)
+                for n, choice in enumerate(item['choices']):
+                    if not results.get(n):
+                        results[n] = {
+                            'index': choice['index'],
+                            'message': {
+                                'role': choice['delta'].get('role', ''),
+                                'content': choice['delta'].get('content', ''),
+                            }
+                        }
+                        # every message follows <im_start>{role/name}\n{content}<im_end>\n
+                        self.usage.completion_tokens += 4
+
+                    elif choice['finish_reason'] != 'stop':
+                        for k,v in choice['delta'].items():
+                            if v: results[n]['message'][k] += v
+                            self.usage.completion_tokens += 1
+
+                    else:
+                        results[n]['finish_reason'] = choice['finish_reason']
+                        self.usage.completion_tokens += 2  # every reply is primed with <im_start>assistant
+                        yield results.pop(n)
+
+            except Exception as e:
+                logger.error(f'Error: {line}: {e}')
+        
+        for remaining_result in results.values():
+            yield remaining_result
+        
+        if not self.usage.prompt_tokens:
+            self.usage.prompt_tokens = get_chat_tokens_count(
+                messages = self.input_messages, 
+                model_name = self.chat_model.src_value
+            )
+        self.usage.total_tokens = self.usage.completion_tokens + self.usage.prompt_tokens
+    
 
 
 class ChatRoute(BaseRoute):
