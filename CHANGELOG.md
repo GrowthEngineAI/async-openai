@@ -1,6 +1,29 @@
 # Changelogs
 
-- v0.0.22 (2023-06-14)
+#### v0.0.3 (2023-08-10)
+
+_Potentially breaking changes in this version_
+
+**Changes**
+
+- Refactored the architecture of the `OpenAI` Client to accomodate multi-client initialization. i.e. `OpenAI` can now be initialized with multiple API keys and will automatically rotate between them, as well as switch back and forth between Azure and OpenAI.
+
+- Settings are initialized after first call, rather than globally.
+
+- Routes, Clients are configured after first call, rather than during initialization.
+
+
+**Fixes**
+
+- Resolved `embedding` endpoints.
+
+**Updates**
+
+- Changed default `api-version` to `2023-03-15-preview`
+
+---
+
+#### v0.0.22 (2023-06-14)
   - Update pricing to reflect OpenAI's new pricing model
     - `gpt-3.5-turbo`
     - `text-embedding-ada-002`
@@ -9,19 +32,20 @@
   - Modified handling of `gpt-3.5-turbo`'s consumption pricing to reflect `prompt` and `completion` usage
   - Modified default `Embedding` model to be `ada`
 
-
-- 0.0.17 (2023-04-12)
+---
+#### 0.0.17 (2023-04-12)
   - Add better support for chatgpt models and `gpt-4`
   - Better validation `max_tokens`
 
-- 0.0.11 (2023-03-07)
+---
+#### 0.0.11 (2023-03-07)
   - Added support for GPT-3.5 Turbo through `async_openai.OpenAI.chat`
   - Refactored `async_openai.OpenAI` to utilize a `metaclass` rather than initalizing directly
 
-- 0.0.7 (2023-02-02)
+#### 0.0.7 (2023-02-02)
   - Refactor `async_openai.types.options.OpenAIModel` to handle more robust parsing of model names.
 
-- 0.0.3 (2022-12-21)
+#### 0.0.3 (2022-12-21)
   - Fix proper charge for `babbage` and `ada` models.
 
 
