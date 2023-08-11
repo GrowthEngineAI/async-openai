@@ -1,6 +1,6 @@
 # Changelogs
 
-#### v0.0.3 (2023-08-10)
+#### v0.0.30 (2023-08-10)
 
 _Potentially breaking changes in this version_
 
