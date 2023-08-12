@@ -46,6 +46,7 @@ _embedding_prices = {
 
 _chat_prices = {
     'gpt-3.5-turbo': 0.002,
+
 }
 
 _chat_gpt_prices = {
@@ -57,11 +58,27 @@ _chat_gpt_prices = {
         'prompt': 0.003,
         'completion': 0.004,
     },
+    'gpt-35-turbo-16k': {
+        'prompt': 0.003,
+        'completion': 0.004,
+    },
+    'gpt-3-turbo-16k': {
+        'prompt': 0.003,
+        'completion': 0.004,
+    },
     'gpt-4': {
         'prompt': 0.03,
         'completion': 0.06,
     },
     'gpt-3.5-turbo': {
+        'prompt': 0.0015,
+        'completion': 0.002,
+    },
+    'gpt-35-turbo': {
+        'prompt': 0.0015,
+        'completion': 0.002,
+    },
+    'gpt-3-turbo': {
         'prompt': 0.0015,
         'completion': 0.002,
     },
@@ -109,6 +126,8 @@ def get_consumption_cost(
     if (not mode or mode == 'chat') and any(
         arch in model_name for arch in {
             'gpt-3.5',
+            'gpt-35',
+            'gpt-3',
             'gpt-4',
         }):
             return next(
@@ -229,7 +248,7 @@ class OpenAIModelArch(str, Enum):
             return cls.ada
         elif "gpt-4" in value:
             return cls.chat_gpt4
-        elif "gpt-3.5" in value or "chat" in value:
+        elif "gpt-3.5" in value or "gpt-3" in value or "chat" in value:
             return cls.chat
         return cls.custom
 
@@ -293,7 +312,7 @@ class ModelMode(str, Enum):
             return cls.search
         if "similiarity" in value:
             return cls.similiarity
-        if "gpt-3.5" in value or 'gpt-4' in value or "chat" in value:
+        if "gpt-3.5" in value or "gpt-35" in value or 'gpt-4' in value or "chat" in value:
             return cls.chat
         if "text" in value:
             return cls.completion
@@ -341,7 +360,7 @@ class OpenAIModel(object):
             if ver_values:
                 self.version = '-'.join(ver_values)
                 if self.mode in {ModelMode.chat}:
-                    if self.version in {'3.5', '4', '16k', '32k'}:
+                    if self.version in {'35', '3.5', '4', '3', '16k', '32k'}:
                         self.version = None
                     else:
                         self.version = self.version.rsplit('-', 1)[-1]

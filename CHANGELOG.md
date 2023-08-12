@@ -1,5 +1,25 @@
 # Changelogs
 
+#### v0.0.31 (2023-08-11)
+
+
+**Changes**
+
+- Updated some behaviors of the `OpenAI` Client.
+  * allow for customization of retry behavior or completely disabling it.
+
+- Routes now take the `is_azure` parameter during init rather than using `@property` to determine the route.
+- The `_send` method is better optimized for retry behaviors.
+
+**Fixes**
+
+- Resolved `model` endpoint.
+- Resolved handling of `Azure` models.
+
+
+
+---
+
 #### v0.0.30 (2023-08-10)
 
 _Potentially breaking changes in this version_

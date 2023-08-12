@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import functools
 import tiktoken
-from typing import Optional, Union, List, Dict, TYPE_CHECKING
+import contextlib
+from typing import Optional, Union, List, Dict, Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from async_openai.schemas.chat import ChatMessage
@@ -30,8 +31,8 @@ def modelname_to_contextsize(modelname: str) -> int:
     """
     if modelname == "code-davinci-002":
         return 8000
-    
-    elif modelname in {
+
+    if modelname in {
         "text-curie-001",
         "text-babbage-001",
         "text-ada-001",
@@ -39,32 +40,19 @@ def modelname_to_contextsize(modelname: str) -> int:
     }:
         return 2048
 
-    elif modelname in {
-        "gpt-3.5-turbo-16k",
-    }:
-        return 16384
+    # Check GPT4
+    if modelname.startswith("gpt-4") or modelname.startswith("gpt4"):
+        if "32k" in modelname:
+            return 32768
+        return 16384 if "16k" in modelname else 8192
     
-    elif "gpt-3.5-turbo" in modelname:
-        return 4096
-
-    # elif modelname in {
-    #     "gpt-3.5-turbo",
-    #     "gpt-3.5-turbo-0314"
-    # }:
-    #     return 4096
+    # Check GPT3.5
+    if "gpt" in modelname \
+        and "turbo" in modelname \
+        and ("3.5" in modelname or "35" in modelname):
+        return 16384 if "16k" in modelname else 4096
     
-    elif modelname in {
-        "gpt-4-32k",
-        "gpt-4-32k-0314"
-    }:
-        return 32768
-    elif modelname in {
-        "gpt-4", 
-        "gpt-4-0314"
-    }:
-        return 8192
-    else:
-        return 4097
+    return 4097
     
 
 def get_encoder(
@@ -73,9 +61,10 @@ def get_encoder(
     """
     Returns the correct encoder for the model name.
     """
-    if any(name in model_name for name in {'gpt-4', 'gpt-3.5'}):
-        return tiktoken.encoding_for_model(model_name)
+    if "gpt" in model_name and "2" not in model_name:
 
+        # Likely GPT4 or GPT3.5
+        return tiktoken.get_encoding("cl100k_base")
     encoder = "gpt2"
     if model_name in {"text-davinci-003", "text-davinci-002"}:
         encoder = "p50k_base"
@@ -160,3 +149,14 @@ def get_max_chat_tokens(
     if max_tokens is None:
         return max_input_tokens
     return min(max_input_tokens, max_tokens)
+
+
+def fast_tokenize(text: Any) -> int:
+    """
+    Do a very fast tokenization of the text
+    by estimating the number of tokens based on the
+    number of characters in the string.
+
+    1 token ~= 4 characters
+    """
+    return len(str(text)) // 4

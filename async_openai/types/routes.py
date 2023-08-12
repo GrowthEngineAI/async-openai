@@ -1,7 +1,7 @@
 import json
 import aiohttpx
 import backoff
-
+import functools
 from lazyops.types import BaseModel, Field, lazyproperty
 from lazyops.utils import ObjectEncoder
 from typing import Dict, Optional, Any, List, Type, Callable, Union
@@ -29,6 +29,25 @@ RESPONSE_SUCCESS_CODES = [
     204
 ]
 
+_retry_wrapper: Optional[Callable] = None
+
+def get_retry_wrapper(
+    max_retries: int
+):
+    """
+    Creates the retryable wrapper
+    """
+    global _retry_wrapper
+    if _retry_wrapper is None:
+        _retry_wrapper = functools.partial(
+            backoff.on_exception,
+            backoff.expo, 
+            exception = Exception, 
+            giveup = fatal_exception
+        )
+    return _retry_wrapper(max_tries = max_retries + 1)
+
+
 class BaseRoute(BaseModel):
     client: aiohttpx.Client
     headers: Dict[str, str] = Field(default_factory = get_default_headers)
@@ -42,19 +61,18 @@ class BaseRoute(BaseModel):
     debug_enabled: Optional[bool] = False
     on_error: Optional[Callable] = None
     ignore_errors: Optional[bool] = False
+    disable_retries: Optional[bool] = None
     max_retries: Optional[int] = None
+    retry_function: Optional[Callable] = None # Allow for customized retry functions
 
     settings: Optional[Union[OpenAISettings, AzureOpenAISettings]] = Field(default_factory = get_settings)
-
-    @property
-    def is_azure(self):
-        """
-        Returns whether the Route is for Azure
-        """
-        return isinstance(self.settings, AzureOpenAISettings)
+    is_azure: Optional[bool] = None
 
     @lazyproperty
     def api_resource(self):
+        """
+        Returns the API Resource
+        """
         return ''
     
     """
@@ -102,17 +120,22 @@ class BaseRoute(BaseModel):
     def usage_enabled(self):
         return False
     
-    def get_resource_url(self, data: Dict[str, Any]) -> str:
+    def get_resource_url(self, data: Optional[Dict[str, Any]] = None, **kwargs) -> str:
         """
         Returns the Resource URL from the Response Data
         """
+        if self.is_azure is None: self.is_azure = isinstance(self.settings, AzureOpenAISettings)
         if not self.is_azure: return self.api_resource
-        base_endpoint = self.api_resource
-        deployment = data.get('deployment', data.get('model'))
+        data = data or {}
+        base_endpoint = '/openai'
+        deployment = data.get('deployment', data.get('model', kwargs.get('deployment', kwargs.get('model'))))
         if deployment is not None:
-            base_endpoint = f'/openai/deployments/{deployment}/{base_endpoint}'
-        api_version = data.pop('api_version', self.settings.api_version)
-        return f'{base_endpoint}?api-version={api_version}'
+            base_endpoint += f'/deployments/{deployment}'
+        base_endpoint += f'/{self.api_resource}'
+        if api_version := data.get('api_version', kwargs.get('api_version', self.settings.api_version)):
+            base_endpoint += f'?api-version={api_version}'
+        return base_endpoint
+
 
     def encode_data(self, data: Dict[str, Any]) -> str:
         """
@@ -149,7 +172,7 @@ class BaseRoute(BaseModel):
         data = input_object.dict(exclude_none = self.exclude_null)
         api_response = self._send(
             method = 'POST',
-            url = self.get_resource_url(data = data),
+            url = self.get_resource_url(data = data, **kwargs),
             data = self.encode_data(data),
             headers = self.headers,
             timeout = self.timeout,
@@ -181,7 +204,7 @@ class BaseRoute(BaseModel):
         data = input_object.dict(exclude_none = self.exclude_null)
         api_response = await self._async_send(
             method = 'POST',
-            url = self.get_resource_url(data = data),
+            url = self.get_resource_url(data = data, **kwargs),
             data = self.encode_data(data),
             headers = self.headers,
             timeout = self.timeout,
@@ -366,7 +389,7 @@ class BaseRoute(BaseModel):
         
         api_response = self._send(
             method = 'GET',
-            url = self.api_resource,
+            url = self.get_resource_url(data = None, **kwargs),
             params = params,
             headers = self.headers,
             timeout = self.timeout,
@@ -393,15 +416,14 @@ class BaseRoute(BaseModel):
         
         api_response = await self._async_send(
             method = 'GET',
-            url = self.api_resource,
+            url = self.get_resource_url(data = None, **kwargs),
             params = params,
             headers = self.headers,
             timeout = self.timeout,
             **kwargs
         )
         data = self.handle_response(api_response)
-        return self.prepare_response(data)
-        #return self.prepare_index_response(data)
+        return await self.aprepare_response(data)
 
     def get_all(
         self, 
@@ -834,9 +856,7 @@ class BaseRoute(BaseModel):
         if response.status_code in self.success_codes:
             return response if response.content else None
         
-        if self.ignore_errors:
-            return None
-        
+        if self.ignore_errors: return None
         raise error_handler(
             response = response,
             data = response.content,
@@ -850,31 +870,33 @@ class BaseRoute(BaseModel):
         params: Optional[Dict[str, Any]] = None,
         data: Optional[Dict[str, Any]] = None,
         headers: Optional[Dict[str, Any]] = None,
-        # ignore_errors: Optional[bool] = None,
         timeout: Optional[int] = None,
         max_retries: Optional[int] = None,
         **kwargs
     ) -> aiohttpx.Response:
-        # if ignore_errors is None: ignore_errors = self.ignore_errors
-        if max_retries is None: max_retries = get_max_retries()
+        """
+        Handle Sending Requests
+        """
         if timeout is None: timeout = self.timeout
-        if self.debug_enabled:
-            logger.info(f'[{method} - {url}] headers: {headers}, params: {params}, data: {data}')
+        if self.debug_enabled: logger.info(f'[{method} - {url}] headers: {headers}, params: {params}, data: {data}')
 
-        @backoff.on_exception(
-            backoff.expo, Exception, max_tries = max_retries + 1, giveup = fatal_exception
+        request_func = self.client.request
+        if self.retry_function is not None:
+            request_func = self.retry_function(request_func)
+        elif not self.disable_retries:
+            if max_retries is None: max_retries = get_max_retries()
+            request_func = get_retry_wrapper(max_retries=max_retries)(request_func)
+        
+        return request_func(
+            method = method,
+            url = url,
+            params = params,
+            data = data,
+            headers = headers,
+            timeout = timeout,
+            **kwargs
         )
-        def _retryable_send():
-            return self.client.request(
-                method = method,
-                url = url,
-                params = params,
-                data = data,
-                headers = headers,
-                timeout = timeout,
-                **kwargs
-            )
-        return _retryable_send()
+
     
     async def _async_send(
         self,
@@ -883,32 +905,33 @@ class BaseRoute(BaseModel):
         params: Optional[Dict[str, Any]] = None,
         data: Optional[Dict[str, Any]] = None,
         headers: Optional[Dict[str, Any]] = None,
-        # ignore_errors: Optional[bool] = None,
         timeout: Optional[int] = None,
         max_retries: Optional[int] = None,
         **kwargs
     ) -> aiohttpx.Response:
-        # if ignore_errors is None: ignore_errors = self.ignore_errors
-        if max_retries is None: max_retries = get_max_retries()
+        """
+        Handle Sending Requests
+        """
+        
         if timeout is None: timeout = self.timeout
-        if self.debug_enabled:
-            logger.info(f'[{method} - {url}] headers: {headers}, params: {params}, data: {data}')
+        if self.debug_enabled: logger.info(f'[{method} - {url}] headers: {headers}, params: {params}, data: {data}')
 
-
-        @backoff.on_exception(
-            backoff.expo, Exception, max_tries = max_retries + 1, giveup = fatal_exception
+        request_func = self.client.async_request
+        if self.retry_function is not None:
+            request_func = self.retry_function(request_func)
+        elif not self.disable_retries:
+            if max_retries is None: max_retries = get_max_retries()
+            request_func = get_retry_wrapper(max_retries = max_retries)(request_func)
+        
+        return await request_func(
+            method = method,
+            url = url,
+            params = params,
+            data = data,
+            headers = headers,
+            timeout = timeout,
+            **kwargs
         )
-        async def _retryable_async_send():
-            return await self.client.async_request(
-                method = method,
-                url = url,
-                params = params,
-                data = data,
-                headers = headers,
-                timeout = timeout,
-                **kwargs
-            )
-        return await _retryable_async_send()
     
     def prepare_index_response(
         self, 
@@ -930,62 +953,4 @@ class BaseRoute(BaseModel):
             'meta': data['meta']
         }
     
-    # def current_usage(
-    #     self, 
-    #     resource_id: str, 
-    #     external_subscription_id: str,
-    #     usage_object: Type[BaseResource] = None,
-    #     **kwargs
-    # ):
-    #     """
-    #     Get Current Usage for a Resource
-
-    #     :param resource_id: The ID of the Resource to Get Usage For
-    #     """
-    #     if not self.usage_enabled:
-    #         raise NotImplementedError('Usage is not enabled for this resource')
-    #     api_resource = f'{self.api_resource}/{resource_id}/current_usage'
-    #     #api_response = self.client.get(
-    #     api_response = self._send(
-    #         method = 'GET',
-    #         url = api_resource, 
-    #         params = {'external_subscription_id': external_subscription_id},
-    #         headers = self.headers,
-    #         **kwargs
-    #     )
-    #     data = self.handle_response(api_response).json().get('customer_usage')
-    #     usage_object = usage_object or self.usage_model
-    #     return usage_object.parse_obj(data)
-    
-    # async def async_current_usage(
-    #     self, 
-    #     resource_id: str, 
-    #     external_subscription_id: str,
-    #     usage_object: Type[BaseResource] = None,
-    #     **kwargs
-    # ):
-    #     """
-    #     Get Current Usage for a Resource
-
-    #     :param resource_id: The ID of the Resource to Get Usage For
-    #     """
-    #     if not self.usage_enabled:
-    #         raise NotImplementedError('Usage is not enabled for this resource')
-    #     api_resource = f'{self.api_resource}/{resource_id}/current_usage'
-    #     api_response = await self._async_send(
-    #         method = 'GET',
-    #         url = api_resource, 
-    #         params = {'external_subscription_id': external_subscription_id},
-    #         headers = self.headers,
-    #         timeout = self.timeout,
-    #         **kwargs
-    #     )
-    #     data = self.handle_response(api_response).json().get('customer_usage')
-    #     usage_object = usage_object or self.usage_model
-    #     return usage_object.parse_obj(data)
-
-
-
-
-
 

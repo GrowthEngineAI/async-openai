@@ -27,6 +27,7 @@ class BaseOpenAISettings(BaseSettings):
     app_info: Optional[Dict[str, str]] = None
     debug_enabled: Optional[bool] = False
     ignore_errors: Optional[bool] = False
+    disable_retries: Optional[bool] = False # Allows users to customize the retry behavior
 
     timeout: Optional[int] = 600
     max_retries: Optional[int] = 3
@@ -223,6 +224,7 @@ class BaseOpenAISettings(BaseSettings):
         app_info: Optional[Dict[str, str]] = None,
         debug_enabled: Optional[bool] = None,
         ignore_errors: Optional[bool] = None,
+        disable_retries: Optional[bool] = None,
         **kwargs
     ):  # sourcery skip: low-code-quality
         """
@@ -251,6 +253,7 @@ class BaseOpenAISettings(BaseSettings):
         if app_info is not None: self.app_info = app_info
         if debug_enabled is not None: self.debug_enabled = debug_enabled
         if ignore_errors is not None: self.ignore_errors = ignore_errors
+        if disable_retries is not None: self.disable_retries = disable_retries
 
 
 

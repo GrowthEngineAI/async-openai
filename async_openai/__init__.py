@@ -1,5 +1,6 @@
 from __future__ import absolute_import
 
+from async_openai.types import errors
 from async_openai.utils.config import OpenAISettings, get_settings
 from async_openai.types.errors import (
     OpenAIError,

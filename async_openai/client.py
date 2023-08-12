@@ -1,12 +1,10 @@
 import aiohttpx
-import pathlib
 from typing import Optional, Callable, Dict, Union, List
 
-from lazyops.types import lazyproperty
 from async_openai.schemas import *
 from async_openai.types.options import ApiType
 from async_openai.utils.logs import logger
-from async_openai.utils.config import get_settings, OpenAISettings
+from async_openai.utils.config import get_settings, OpenAISettings, AzureOpenAISettings
 from async_openai.routes import ApiRoutes
 from async_openai.meta import OpenAIMetaClass
 
@@ -51,6 +49,8 @@ class OpenAIClient:
     timeout: Optional[int] = None
     max_retries: Optional[int] = None
     ignore_errors: Optional[bool] = None
+    disable_retries: Optional[bool] = None
+    retry_function: Optional[Callable] = None
 
     api_url: Optional[str] = None
     base_url: Optional[str] = None
@@ -110,6 +110,8 @@ class OpenAIClient:
         timeout: Optional[int] = None,
         max_retries: Optional[int] = None,
         ignore_errors: Optional[bool] = None,
+        disable_retries: Optional[bool] = None,
+        retry_function: Optional[Callable] = None,
 
         settings: Optional[OpenAISettings] = None,
         name: Optional[str] = None,
@@ -196,11 +198,18 @@ class OpenAIClient:
             self.max_retries = max_retries
         elif self.max_retries is None:
             self.max_retries = self.settings.max_retries
+        if disable_retries is not None:
+            self.disable_retries = disable_retries
+        elif self.disable_retries is None:
+            self.disable_retries = self.settings.disable_retries
+        
+        if retry_function is not None:
+            self.retry_function = retry_function
         
         if is_azure is not None:
             self.is_azure = is_azure
         elif self.is_azure is None:
-            self.is_azure = False
+            self.is_azure = isinstance(self.settings, AzureOpenAISettings)
         if name is not None:
             self.name = name
         elif self.name is None:
@@ -239,6 +248,9 @@ class OpenAIClient:
             timeout = self.timeout,
             max_retries = self.max_retries,
             settings = self.settings,
+            is_azure = self.is_azure,
+            disable_retries = self.disable_retries,
+            retry_function = self.retry_function,
             **kwargs
         )
         if self.debug_enabled:

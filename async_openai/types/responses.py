@@ -92,8 +92,7 @@ class BaseResponse(BaseResource):
         """
         Returns the dict representation of the response
         """
-        if exclude is None:
-            exclude = set()
+        if exclude is None: exclude = set()
         exclude = set(exclude) | set(self.excluded_params)
         return super().dict(*args, exclude = exclude, **kwargs)
 
@@ -374,13 +373,8 @@ class BaseResponse(BaseResource):
         """
         Handles the response and returns the appropriate object
         """
-        # logger.info(f"Preparing Response for {cls.__name__}")
-        resource = cls(
-            _response = response,
-            _input_object = input_object,
-        )
+        resource = cls(_response = response, _input_object = input_object)
         resource.construct_resource(**kwargs)
-        # logger.info(f"Response: {resource}")
         return resource
     
     @classmethod
@@ -393,10 +387,7 @@ class BaseResponse(BaseResource):
         """
         Handles the response and returns the appropriate object
         """
-        resource = cls(
-            _response = response,
-            _input_object = input_object,
-        )
+        resource = cls(_response = response, _input_object = input_object)
         await resource.aconstruct_resource(**kwargs)
         return resource
 

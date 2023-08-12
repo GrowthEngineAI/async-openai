@@ -61,6 +61,8 @@ class ChatObject(BaseResource):
     user: Optional[str] = None
     validate_max_tokens: Optional[bool] = Field(default = True, exclude = True)
 
+    # api_version: Optional[str] = None
+
     @validator('messages', pre = True, always = True)
     def validate_messages(cls, v) -> List[ChatMessage]:
         vals = []

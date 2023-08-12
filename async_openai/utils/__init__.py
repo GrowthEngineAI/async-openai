@@ -20,4 +20,7 @@ from async_openai.utils.tokenization import (
     get_max_tokens,
     get_chat_tokens_count,
     get_max_chat_tokens,
+    fast_tokenize,
 )
+
+from async_openai.utils.resolvers import fix_json

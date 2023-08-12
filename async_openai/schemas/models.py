@@ -1,6 +1,6 @@
 import datetime
 from typing import Optional, Type, List, Dict, Any
-from lazyops.types import lazyproperty
+from lazyops.types import lazyproperty, Field
 
 from async_openai.types.resources import BaseResource, Permission
 from async_openai.types.responses import BaseResponse
@@ -17,12 +17,19 @@ __all__ = [
 
 class ModelData(BaseResource):
     id: str
-    owned_by: str
-    created: Optional[datetime.datetime]
-    permission: List[Permission] = []
-    root: str
-    parent: Optional[str]
-    object: str = 'model'
+    status: Optional[str] = None
+    owned_by: Optional[str] = None
+    created: Optional[datetime.datetime] = None
+    updated_at: Optional[datetime.datetime] = None
+    created_at: Optional[datetime.datetime] = None
+    permission: Optional[List[Permission]] = Field(default_factory = list)
+    root: Optional[str] = None
+    parent: Optional[str] = None
+    object: Optional[str] = 'model'
+    capabilities: Optional[Dict[str, Any]] = Field(default_factory = dict)
+    lifecycle_status: Optional[str] = None
+    deprecation: Optional[Dict[str, Any]] = Field(default_factory = dict)
+
 
     @lazyproperty
     def model_age(self) -> Optional[datetime.datetime]:
