@@ -210,6 +210,11 @@ class OpenAIMetaClass(type):
         app_info: Optional[Dict[str, str]] = None,
         debug_enabled: Optional[bool] = None,
         ignore_errors: Optional[bool] = None,
+        disable_retries: Optional[bool] = None,
+        max_connections: Optional[int] = None,
+        max_keepalive_connections: Optional[int] = None,
+        keepalive_expiry: Optional[int] = None,
+        custom_headers: Optional[Dict[str, str]] = None,
 
         on_error: Optional[Callable] = None,
         reset: Optional[bool] = None,
@@ -233,8 +238,13 @@ class OpenAIMetaClass(type):
         :param timeout: Timeout in Seconds          | Env: [`OPENAI_TIMEOUT`]
         :param max_retries: The OpenAI Max Retries  | Env: [`OPENAI_MAX_RETRIES`]
         :param ignore_errors: Ignore Errors         | Env: [`OPENAI_IGNORE_ERRORS`]
+        :param disable_retries: Disable Retries     | Env: [`OPENAI_DISABLE_RETRIES`]
+        :param max_connections: Max Connections     | Env: [`OPENAI_MAX_CONNECTIONS`]
+        :param max_keepalive_connections: Max Keepalive Connections | Env: [`OPENAI_MAX_KEEPALIVE_CONNECTIONS`]
+        :param keepalive_expiry: Keepalive Expiry   | Env: [`OPENAI_KEEPALIVE_EXPIRY`]
+        :param custom_headers: Custom Headers       | Env: [`OPENAI_CUSTOM_HEADERS`]
+        
         :param on_error: On Error Callback          
-
         :param kwargs: Additional Keyword Arguments
         """
         ...
@@ -260,6 +270,10 @@ class OpenAIMetaClass(type):
         azure_app_info: Optional[Dict[str, str]] = None,
         azure_debug_enabled: Optional[bool] = None,
         azure_ignore_errors: Optional[bool] = None,
+        azure_max_connections: Optional[int] = None,
+        azure_max_keepalive_connections: Optional[int] = None,
+        azure_keepalive_expiry: Optional[int] = None,
+        azure_custom_headers: Optional[Dict[str, str]] = None,
 
         on_error: Optional[Callable] = None,
         reset: Optional[bool] = None,
@@ -286,7 +300,7 @@ class OpenAIMetaClass(type):
         """
         ...
 
-
+    # @overload
     def configure(
         cls, 
         on_error: Optional[Callable] = None,

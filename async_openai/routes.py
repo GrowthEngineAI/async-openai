@@ -34,7 +34,7 @@ class ApiRoutes:
     def __init__(
         self,
         client: aiohttpx.Client,
-        headers: Optional[Dict] = None,
+        # headers: Optional[Dict] = None,
         debug_enabled: Optional[bool] = False,
         on_error: Optional[Callable] = None,
         ignore_errors: Optional[bool] = False,
@@ -50,7 +50,7 @@ class ApiRoutes:
     ):
         self.client = client
         self.settings = settings or get_settings()
-        self.headers = headers or self.settings.get_headers()
+        # self.headers = headers or self.settings.get_headers()
         self.debug_enabled = debug_enabled
         self.on_error = on_error
         self.ignore_errors = ignore_errors
@@ -74,7 +74,7 @@ class ApiRoutes:
             try:
                 setattr(self, route, route_class(
                     client = self.client,
-                    headers = self.headers,
+                    # headers = self.headers,
                     debug_enabled = self.debug_enabled,
                     on_error = self.on_error,
                     ignore_errors = self.ignore_errors,

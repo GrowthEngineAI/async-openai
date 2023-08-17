@@ -50,7 +50,7 @@ def get_retry_wrapper(
 
 class BaseRoute(BaseModel):
     client: aiohttpx.Client
-    headers: Dict[str, str] = Field(default_factory = get_default_headers)
+    # headers: Dict[str, str] = Field(default_factory = get_default_headers)
     success_codes: Optional[List[int]] = RESPONSE_SUCCESS_CODES
     
     input_model: Optional[Type[BaseResource]] = None
@@ -141,18 +141,18 @@ class BaseRoute(BaseModel):
         """
         Encodes the data
         """
-        if self.is_azure:
-            _ = data.pop('model', None)
-            _ = data.pop('deployment', None)
+        # if self.is_azure:
+        #     _ = data.pop('model', None)
+        #     _ = data.pop('deployment', None)
         return json.dumps(
             data,
             cls = ObjectEncoder
         )
-        
 
     def create(
         self, 
         input_object: Optional[Type[BaseResource]] = None,
+        headers: Optional[Dict[str, str]] = None,
         **kwargs
     ):
         """
@@ -174,7 +174,7 @@ class BaseRoute(BaseModel):
             method = 'POST',
             url = self.get_resource_url(data = data, **kwargs),
             data = self.encode_data(data),
-            headers = self.headers,
+            headers = headers,
             timeout = self.timeout,
             **kwargs
         )
@@ -185,6 +185,7 @@ class BaseRoute(BaseModel):
     async def async_create(
         self, 
         input_object: Optional[Type[BaseResource]] = None,
+        headers: Optional[Dict[str, str]] = None,
         **kwargs
     ):
         """
@@ -206,7 +207,7 @@ class BaseRoute(BaseModel):
             method = 'POST',
             url = self.get_resource_url(data = data, **kwargs),
             data = self.encode_data(data),
-            headers = self.headers,
+            headers = headers,
             timeout = self.timeout,
             **kwargs
         )
@@ -216,6 +217,7 @@ class BaseRoute(BaseModel):
     def batch_create(
         self, 
         input_object: Optional[Type[BaseResource]] = None,
+        headers: Optional[Dict[str, str]] = None,
         **kwargs
     ):
         """
@@ -244,7 +246,7 @@ class BaseRoute(BaseModel):
             method = 'POST',
             url = self.get_resource_url(data = data),
             data = data,
-            headers = self.headers,
+            headers = headers,
             timeout = self.timeout,
             **kwargs
         )
@@ -254,6 +256,7 @@ class BaseRoute(BaseModel):
     async def async_batch_create(
         self, 
         input_object: Optional[Type[BaseResource]] = None,
+        headers: Optional[Dict[str, str]] = None,
         **kwargs
     ):
         """
@@ -282,7 +285,7 @@ class BaseRoute(BaseModel):
             method = 'POST',
             url = api_resource,
             data = data,
-            headers = self.headers,
+            headers = headers,
             timeout = self.timeout,
             **kwargs
         )
@@ -294,6 +297,7 @@ class BaseRoute(BaseModel):
         self, 
         resource_id: str, 
         params: Optional[Dict[str, Any]] = None,
+        headers: Optional[Dict[str, str]] = None,
         **kwargs
     ) -> Type[BaseResource]:
         """
@@ -310,7 +314,7 @@ class BaseRoute(BaseModel):
             method = 'GET',
             url = api_resource, 
             params = params,
-            headers = self.headers,
+            headers = headers,
             **kwargs
         )
         data = self.handle_response(api_response)
@@ -320,6 +324,7 @@ class BaseRoute(BaseModel):
         self,
         resource_id: str,
         params: Optional[Dict[str, Any]] = None,
+        headers: Optional[Dict[str, str]] = None,
         **kwargs
     ) -> Type[BaseResource]:
         """
@@ -336,7 +341,7 @@ class BaseRoute(BaseModel):
             method = 'GET',
             url = api_resource, 
             params = params,
-            headers = self.headers,
+            headers = headers,
             timeout = self.timeout,
             **kwargs
         )
@@ -347,6 +352,7 @@ class BaseRoute(BaseModel):
         self, 
         resource_id: str, 
         params: Optional[Dict[str, Any]] = None,
+        headers: Optional[Dict[str, str]] = None,
         **kwargs
     ) -> Type[BaseResource]:
         """
@@ -355,12 +361,13 @@ class BaseRoute(BaseModel):
         :param resource_id: The ID of the Resource to GET
         :param params: Optional Query Parameters
         """
-        return self.retrieve(resource_id = resource_id, params = params, **kwargs)
+        return self.retrieve(resource_id = resource_id, params = params, headers = headers, **kwargs)
     
     async def async_get(
         self,
         resource_id: str,
         params: Optional[Dict[str, Any]] = None,
+        headers: Optional[Dict[str, str]] = None,
         **kwargs
     ) -> Type[BaseResource]:
         """
@@ -369,12 +376,13 @@ class BaseRoute(BaseModel):
         :param resource_id: The ID of the Resource to GET
         :param params: Optional Query Parameters
         """
-        return await self.async_retrieve(resource_id = resource_id, params = params, **kwargs)
+        return await self.async_retrieve(resource_id = resource_id, params = params, headers = headers, **kwargs)
 
     
     def list(
         self, 
         params: Optional[Dict[str, Any]] = None,
+        headers: Optional[Dict[str, str]] = None,
         **kwargs
     ) -> Dict[str, Union[List[Type[BaseResource]], Dict[str, Any]]]:
         """
@@ -391,7 +399,7 @@ class BaseRoute(BaseModel):
             method = 'GET',
             url = self.get_resource_url(data = None, **kwargs),
             params = params,
-            headers = self.headers,
+            headers = headers,
             timeout = self.timeout,
             **kwargs
         )
@@ -402,6 +410,7 @@ class BaseRoute(BaseModel):
     async def async_list(
         self, 
         params: Optional[Dict[str, Any]] = None,
+        headers: Optional[Dict[str, str]] = None,
         **kwargs
     ) -> Dict[str, Union[List[Type[BaseResource]], Dict[str, Any]]]:
         """
@@ -418,7 +427,7 @@ class BaseRoute(BaseModel):
             method = 'GET',
             url = self.get_resource_url(data = None, **kwargs),
             params = params,
-            headers = self.headers,
+            headers = headers,
             timeout = self.timeout,
             **kwargs
         )
@@ -456,6 +465,7 @@ class BaseRoute(BaseModel):
     def delete(
         self, 
         resource_id: str,
+        headers: Optional[Dict[str, str]] = None,
         **kwargs
     ):
         """
@@ -470,7 +480,7 @@ class BaseRoute(BaseModel):
         api_response = self._send(
             method = 'DELETE',
             url = api_resource,
-            headers = self.headers,
+            headers = headers,
             timeout = self.timeout,
             **kwargs
         )
@@ -480,6 +490,7 @@ class BaseRoute(BaseModel):
     async def async_delete(
         self, 
         resource_id: str,
+        headers: Optional[Dict[str, str]] = None,
         **kwargs
     ):
         """
@@ -494,7 +505,7 @@ class BaseRoute(BaseModel):
         api_response = await self._async_send(
             method = 'DELETE',
             url = api_resource,
-            headers = self.headers,
+            headers = headers,
             timeout = self.timeout,
             **kwargs
         )
@@ -506,6 +517,7 @@ class BaseRoute(BaseModel):
         self, 
         input_object: Optional[Type[BaseResource]] = None,
         resource_id: str = None,
+        headers: Optional[Dict[str, str]] = None,
         **kwargs
     ):
         """
@@ -539,7 +551,8 @@ class BaseRoute(BaseModel):
             method = 'PUT',
             url = api_resource,
             data = data,
-            headers = self.headers,
+            headers = headers,
+
             timeout = self.timeout,
             **kwargs
         )
@@ -550,6 +563,7 @@ class BaseRoute(BaseModel):
         self, 
         input_object: Optional[Type[BaseResource]] = None,
         resource_id: str = None,
+        headers: Optional[Dict[str, str]] = None,
         **kwargs
     ):
         """
@@ -581,7 +595,7 @@ class BaseRoute(BaseModel):
             method = 'PUT',
             url = api_resource,
             data = data,
-            headers = self.headers,
+            headers = headers,
             timeout = self.timeout,
             **kwargs
         )
@@ -690,6 +704,7 @@ class BaseRoute(BaseModel):
     def upload(
         self, 
         input_object: Optional[Type[FileResource]] = None,
+        headers: Optional[Dict[str, str]] = None,
         **kwargs,
     ):
         """
@@ -706,7 +721,8 @@ class BaseRoute(BaseModel):
                 **kwargs
             )
         
-        headers = self.headers.copy()
+        # headers = self.headers.copy()
+        headers = headers or {}
         headers['Content-Type'] = 'multipart/form-data'
 
         api_resource = self.api_resource
@@ -724,6 +740,7 @@ class BaseRoute(BaseModel):
     async def async_upload(
         self, 
         input_object: Optional[Type[FileResource]] = None,
+        headers: Optional[Dict[str, str]] = None,
         **kwargs,
     ):
         """
@@ -740,7 +757,8 @@ class BaseRoute(BaseModel):
                 **kwargs
             )
         
-        headers = self.headers.copy()
+        # headers = self.headers.copy()
+        headers = headers or {}
         headers['Content-Type'] = 'multipart/form-data'
 
         api_resource = self.api_resource
@@ -758,6 +776,7 @@ class BaseRoute(BaseModel):
     def download(
         self, 
         resource_id: str,
+        headers: Optional[Dict[str, str]] = None,
         **kwargs
     ):
         """
@@ -772,7 +791,7 @@ class BaseRoute(BaseModel):
         api_response = self._send(
             method = 'POST',
             url = api_resource, 
-            headers = self.headers,
+            headers = headers,
             timeout = self.timeout,
             **kwargs
         )
@@ -782,6 +801,7 @@ class BaseRoute(BaseModel):
     async def async_download(
         self, 
         resource_id: str,
+        headers: Optional[Dict[str, str]] = None,
         **kwargs
     ):
         """
@@ -796,7 +816,7 @@ class BaseRoute(BaseModel):
         api_response = await self._async_send(
             method = 'POST',
             url = api_resource, 
-            headers = self.headers,
+            headers = headers,
             timeout = self.timeout,
             **kwargs
         )

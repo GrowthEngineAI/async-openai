@@ -156,6 +156,13 @@ class BaseResponse(BaseResource):
         Returns the organization
         """
         return self.headers.get("openai-organization")
+    
+    @property
+    def is_azure(self) -> bool:
+        """
+        Returns whether the response is from azure
+        """
+        return bool(self.headers.get("azureml-model-session", self.headers.get("azureml-model-group")))
 
     @property
     def response_ms(self) -> Optional[int]:

@@ -1,11 +1,81 @@
 import json
 import pathlib
+import aiohttpx
 from typing import Optional, Dict, Union, Any
-from lazyops.types import BaseSettings, validator, lazyproperty
+from lazyops.types import BaseSettings, validator, BaseModel, lazyproperty, Field
 from async_openai.version import VERSION
 from async_openai.types.options import ApiType
 
 _should_reset_api: bool = False
+
+class OpenAIContext(BaseModel):
+    """
+    A context object for OpenAI
+    """
+    custom_headers: Optional[Dict[str, str]] = Field(default_factory=dict)
+    data: Optional[Dict[str, Any]] = Field(default_factory=dict)
+
+    def update_headers(self, headers: Dict[str, Any]):
+        """
+        Updates the custom headers
+        """
+        if self.custom_headers is None: self.custom_headers = {}
+        for k,v in headers.items():
+            if isinstance(v, str): continue
+            if isinstance(v, bool):
+                headers[k] = "true" if v else "false"
+            if isinstance(v, (int, float, type(None))):
+                headers[k] = str(v)
+        self.custom_headers.update(headers)
+
+
+class OpenAIAuth(aiohttpx.Auth):
+    """
+    Custom Authentication Wrapper for OpenAI Client
+    """
+    def __init__(
+        self, 
+        settings: Union['OpenAISettings', 'AzureOpenAISettings'],
+        context: 'OpenAIContext',
+        auth_key: Optional[str] = None,
+        auth_value: Optional[str] = None,
+        **kwargs,
+    ):
+        """
+        Initializes the OpenAI Auth
+        """
+        self.settings = settings
+        self.context = context
+        self.auth_key = auth_key
+        self.auth_value = auth_value
+    
+    def auth_flow(self, request):
+        """
+        Injects the API Key into the Request
+        """
+        # request.headers.update(self.settings.get_api_key_headers())
+        if self.auth_key not in request.headers:
+            request.headers[self.auth_key] = self.auth_value
+        if custom_headers := self.context.custom_headers:
+            request.headers.update(custom_headers)
+        
+        # if self.settings.custom_headers:
+        #     request.headers.update(self.settings.custom_headers)
+        yield request
+
+    async def async_auth_flow(self, request):
+        """
+        Injects the API Key into the Request
+        """
+        if self.auth_key not in request.headers:
+            request.headers[self.auth_key] = self.auth_value
+        if custom_headers := self.context.custom_headers:
+            request.headers.update(custom_headers)
+        # request.headers.update(self.settings.get_api_key_headers())
+        # request.headers[self.auth_key] = self.auth_value
+        # if self.settings.custom_headers:
+        #     request.headers.update(self.settings.custom_headers)
+        yield request
 
 
 
@@ -32,6 +102,14 @@ class BaseOpenAISettings(BaseSettings):
     timeout: Optional[int] = 600
     max_retries: Optional[int] = 3
 
+    # Additional Configuration
+    ## Request Pool Configuration
+    max_connections: Optional[int] = 250
+    max_keepalive_connections: Optional[int] = 150
+    keepalive_expiry: Optional[int] = 60
+
+    custom_headers: Optional[Dict[str, str]] = None
+
     @validator("api_type")
     def validate_api_type(cls, v):
         """
@@ -49,6 +127,14 @@ class BaseOpenAISettings(BaseSettings):
             return values['api_key_path'].read_text()
         return v
     
+    @lazyproperty
+    def ctx(self) -> OpenAIContext:
+        """
+        Returns the context
+        """
+        return OpenAIContext(
+            custom_headers = self.custom_headers or {},
+        )
 
     @lazyproperty
     def api_url(self) -> str:
@@ -65,6 +151,17 @@ class BaseOpenAISettings(BaseSettings):
         # Return the official Open API URL
         return "https://api.openai.com"
     
+    @property
+    def api_client_limits(self) -> aiohttpx.Limits:
+        """
+        Returns the API Client Limits
+        """
+        return aiohttpx.Limits(
+            max_connections = self.max_connections,
+            max_keepalive_connections = self.max_keepalive_connections,
+            keepalive_expiry = self.keepalive_expiry,
+        )
+    
 
     @lazyproperty
     def base_url(self) -> str:
@@ -78,33 +175,38 @@ class BaseOpenAISettings(BaseSettings):
     
     @property
     def base_headers(self) -> Dict[str, str]:
-        import platform
-        ua = f"OpenAI/v1 async_openai/{VERSION}"
-        if self.app_info:
-            t = ""
-            if "name" in self.app_info:
-                t += self.app_info["name"]
-            if "version" in self.app_info:
-                t += f"/{self.app_info['version']}"
-            if "url" in self.app_info:
-                t += f" ({self.app_info['url']})"
-            ua += f" {t}"
-        uname_without_node = " ".join(
-            v for k, v in platform.uname()._asdict().items() if k != "node"
-        )
-        data = {
-            "bindings_version": VERSION,
-            "httplib": "httpx",
-            "lang": "python",
-            "lang_version": platform.python_version(),
-            "platform": platform.platform(),
-            "publisher": "growthengineai",
-            "uname": uname_without_node,
-        }
-        if self.app_info:
-            data["application"] = self.app_info
-        return {"X-OpenAI-Client-User-Agent": json.dumps(data), "User-Agent": ua}
+        """
+        Returns the Base Headers
+        """
+        if 'app_headers' not in self.ctx.data:
+            import platform
+            ua = f"OpenAI/v1 async_openai/{VERSION}"
+            if self.app_info:
+                t = ""
+                if "name" in self.app_info:
+                    t += self.app_info["name"]
+                if "version" in self.app_info:
+                    t += f"/{self.app_info['version']}"
+                if "url" in self.app_info:
+                    t += f" ({self.app_info['url']})"
+                ua += f" {t}"
+            uname_without_node = " ".join(
+                v for k, v in platform.uname()._asdict().items() if k != "node"
+            )
+            data = {
+                "bindings_version": VERSION,
+                "httplib": "httpx",
+                "lang": "python",
+                "lang_version": platform.python_version(),
+                "platform": platform.platform(),
+                "publisher": "growthengineai",
+                "uname": uname_without_node,
+            }
+            if self.app_info: data["application"] = self.app_info
+            self.ctx.data['app_headers'] = {"X-OpenAI-Client-User-Agent": json.dumps(data), "User-Agent": ua}
+        return self.ctx.data['app_headers']
     
+    # Deprecated
     def get_api_key_headers(
         self,
         api_key: Optional[str] = None, 
@@ -120,19 +222,40 @@ class BaseOpenAISettings(BaseSettings):
             return {"Authorization": f"Bearer {api_key}"}
         return {"api-key": api_key}
 
-    @property
-    def headers(self):
+    def get_api_client_auth(
+        self,
+        api_key: Optional[str] = None, 
+        api_type: Optional[Union[ApiType, str]] = None,
+        **kwargs
+    ) -> OpenAIAuth:
         """
-        Returns the Headers
+        Returns the API Client Auth
         """
-        _headers = self.base_headers.copy()
-        if self.api_key: 
-            _headers.update(self.get_api_key_headers())
-        return _headers
+        if api_key is None: api_key = self.api_key
+        if api_type is None: api_type = self.api_type
+        api_type = api_type.value if isinstance(api_type, ApiType) else api_type
+        if api_type in {"openai", "azure_ad"}:
+            return OpenAIAuth(
+                settings = self, context = self.ctx, auth_key = "Authorization", auth_value= f"Bearer {api_key}",
+            )
+        return OpenAIAuth(
+            settings = self, context = self.ctx, auth_key = "api-key", auth_value = api_key,
+        )
+
+    # @property
+    # def headers(self):
+    #     """
+    #     Returns the Headers
+    #     """
+    #     return self.base_headers.copy()
+        # _headers = self.base_headers.copy()
+        # if self.api_key: 
+        #     _headers.update(self.get_api_key_headers())
+        # return _headers
 
     def get_headers(
         self, 
-        api_key: Optional[str] = None, 
+        # api_key: Optional[str] = None, 
         api_version: Optional[str] = None,
         api_type: Optional[Union[ApiType, str]] = None,
         organization: Optional[str] = None,
@@ -141,10 +264,11 @@ class BaseOpenAISettings(BaseSettings):
     ) -> Dict[str, str]:
         # print(api_key, api_version, api_type, organization, kwargs)
 
-        headers = self.headers.copy()
+        # headers = self.headers.copy()
+        headers = self.base_headers.copy()
         if kwargs: headers.update(**kwargs)
         if app_info is not None: headers['application'] = app_info
-        headers.update(self.get_api_key_headers(api_key = api_key, api_type = api_type))
+        # headers.update(self.get_api_key_headers(api_key = api_key, api_type = api_type))
         if organization is None: organization = self.organization
         if api_version is None: api_version = self.api_version
         if organization:
@@ -225,6 +349,12 @@ class BaseOpenAISettings(BaseSettings):
         debug_enabled: Optional[bool] = None,
         ignore_errors: Optional[bool] = None,
         disable_retries: Optional[bool] = None,
+
+        max_connections: Optional[int] = None,
+        max_keepalive_connections: Optional[int] = None,
+        keepalive_expiry: Optional[int] = None,
+        custom_headers: Optional[Dict[str, str]] = None,
+
         **kwargs
     ):  # sourcery skip: low-code-quality
         """
@@ -255,6 +385,10 @@ class BaseOpenAISettings(BaseSettings):
         if ignore_errors is not None: self.ignore_errors = ignore_errors
         if disable_retries is not None: self.disable_retries = disable_retries
 
+        if max_connections is not None: self.max_connections = max_connections
+        if max_keepalive_connections is not None: self.max_keepalive_connections = max_keepalive_connections
+        if keepalive_expiry is not None: self.keepalive_expiry = keepalive_expiry
+        if custom_headers is not None: self.ctx.update_headers(custom_headers)
 
 
 

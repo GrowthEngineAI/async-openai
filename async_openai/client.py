@@ -4,7 +4,7 @@ from typing import Optional, Callable, Dict, Union, List
 from async_openai.schemas import *
 from async_openai.types.options import ApiType
 from async_openai.utils.logs import logger
-from async_openai.utils.config import get_settings, OpenAISettings, AzureOpenAISettings
+from async_openai.utils.config import get_settings, OpenAISettings, AzureOpenAISettings, OpenAIAuth
 from async_openai.routes import ApiRoutes
 from async_openai.meta import OpenAIMetaClass
 
@@ -58,6 +58,8 @@ class OpenAIClient:
     settings: Optional[OpenAISettings] = None
     name: Optional[str] = None
     is_azure: Optional[bool] = None
+
+    auth: Optional[OpenAIAuth] = None
     _client: Optional[aiohttpx.Client] = None
     _routes: Optional[ApiRoutes] = None
     _kwargs: Optional[Dict] = None
@@ -116,6 +118,7 @@ class OpenAIClient:
         settings: Optional[OpenAISettings] = None,
         name: Optional[str] = None,
         is_azure: Optional[bool] = None,
+        auth: Optional[OpenAIAuth] = None,
         **kwargs
     ):  # sourcery skip: low-code-quality
         """
@@ -186,7 +189,8 @@ class OpenAIClient:
         if headers is not None:
             self.headers = headers
         else:
-            self.headers = self.settings.get_headers(api_key = self.api_key, api_version = self.api_version, api_type = self.api_type, organization = self.organization, app_info = self.app_info)
+            self.headers = self.settings.get_headers(api_version = self.api_version, api_type = self.api_type, organization = self.organization, app_info = self.app_info)
+            # self.headers = self.settings.get_headers(api_key = self.api_key, api_version = self.api_version, api_type = self.api_type, organization = self.organization, app_info = self.app_info)
         
         if on_error is not None:
             self.on_error = on_error
@@ -214,6 +218,11 @@ class OpenAIClient:
             self.name = name
         elif self.name is None:
             self.name = 'default'
+        
+        if auth is not None:
+            self.auth = auth
+        elif self.auth is None:
+            self.auth = self.settings.get_api_client_auth(api_key = self.api_key, api_type = self.api_type)
 
         if kwargs: self._kwargs = kwargs
         self.log_method = logger.info if self.debug_enabled else logger.debug
@@ -230,6 +239,10 @@ class OpenAIClient:
         self._client = aiohttpx.Client(
             base_url = self.base_url,
             timeout = self.timeout,
+            limits = self.settings.api_client_limits,
+            auth = self.auth,
+            headers = self.headers,
+            # auth = self.settings.
         )
 
     def configure_routes(self, **kwargs):
@@ -241,7 +254,7 @@ class OpenAIClient:
         if self._kwargs: kwargs.update(self._kwargs)
         self._routes = ApiRoutes(
             client = self.client,
-            headers = self.headers,
+            # headers = self.headers,
             debug_enabled = self.debug_enabled,
             on_error = self.on_error,
             ignore_errors = self.ignore_errors,

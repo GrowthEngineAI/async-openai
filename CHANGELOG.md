@@ -1,5 +1,15 @@
 # Changelogs
 
+#### v0.0.32 (2023-08-17)
+
+**Changes**
+
+- Updated `headers` behavior and parameter, allowing it to be passed to each API call.
+- Updated `auth` behavior, which now utilizes `httpx.Auth` rather than injecting into the header directly.
+- Added `custom_headers` configuration that can be passed to the `OpenAI` client during initialization.
+- Added customization of `connection_pool`, controlling the number of concurrent connections to the API.
+
+
 #### v0.0.31 (2023-08-11)
 
 
