@@ -198,6 +198,15 @@ class ChatResponse(BaseResponse):
 
 
     @lazyproperty
+    def only_text(self) -> str:
+        """
+        Returns the text for the chat response without the role
+        """
+        if self.choices_results:
+            return '\n'.join([msg.content for msg in self.messages])
+        return self._response.text
+
+    @lazyproperty
     def chat_model(self):
         """
         Returns the model for the completions
