@@ -1,6 +1,8 @@
 # Changelogs
 
-#### v0.0.32 (2023-08-17)
+**Changes**
+
+#### v0.0.32 (2023-08-23)
 
 **Changes**
 
@@ -8,6 +10,9 @@
 - Updated `auth` behavior, which now utilizes `httpx.Auth` rather than injecting into the header directly.
 - Added `custom_headers` configuration that can be passed to the `OpenAI` client during initialization.
 - Added customization of `connection_pool`, controlling the number of concurrent connections to the API.
+
+- Reworked `streaming` implementations, which previously didn't properly work.
+- Added `parse_stream` parameter (default: true) which defers parsing of the stream util it is called with `result.stream` or `result.astream`, rather than parsing the stream as it is received.
 
 
 #### v0.0.31 (2023-08-11)

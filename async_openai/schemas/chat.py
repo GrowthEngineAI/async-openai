@@ -1,7 +1,8 @@
 import json
 import aiohttpx
+import enum
 from pydantic import root_validator, Field
-from typing import Optional, Type, Any, Union, List, Dict, Iterator, AsyncIterator
+from typing import Optional, Type, Any, Union, List, Dict, Iterator, AsyncIterator, Generator, AsyncGenerator, TYPE_CHECKING
 from lazyops.types import validator, lazyproperty
 
 from async_openai.types.options import OpenAIModel, get_consumption_cost
@@ -19,6 +20,14 @@ __all__ = [
     'CompletionResponse',
     'CompletionRoute',
 ]
+
+class MessageKind(str, enum.Enum):
+    CONTENT = 'content'
+    ROLE = 'role'
+
+class StreamedChatMessage(BaseResource):
+    kind: MessageKind
+    value: str
 
 # TODO Add support for name
 class ChatMessage(BaseResource):
@@ -262,10 +271,25 @@ class ChatResponse(BaseResponse):
             data['chat_model'] = data['chat_model'].dict()
         return data
     
+
+    def parse_stream_item(self, item: Union[Dict, Any], **kwargs) -> Optional[StreamedChatMessage]:
+        """
+        Parses a single stream item
+        """
+        choice = item['choices'][0]
+        if choice['finish_reason'] == 'stop':
+            return None
+        kind = MessageKind.ROLE if 'role' in choice['delta'] else MessageKind.CONTENT
+        return StreamedChatMessage(
+            kind = kind,
+            value = choice['delta'].get(kind.value, '')
+        )
+    
     def handle_stream(
         self,
-        response: aiohttpx.Response
-    ) -> Iterator[Dict]:
+        response: aiohttpx.Response,
+        streaming: Optional[bool] = False,
+    ) -> Iterator[Dict]:  # sourcery skip: low-code-quality
         """
         Handle the stream response
         """
@@ -273,6 +297,8 @@ class ChatResponse(BaseResponse):
         for line in parse_stream(response):
             try:
                 item = json.loads(line)
+                if streaming:
+                    yield item
                 self.handle_stream_metadata(item)
                 for n, choice in enumerate(item['choices']):
                     if not results.get(n):
@@ -294,31 +320,46 @@ class ChatResponse(BaseResponse):
                     else:
                         results[n]['finish_reason'] = choice['finish_reason']
                         self.usage.completion_tokens += 2  # every reply is primed with <im_start>assistant
-                        yield results.pop(n)
+                        compl = results.pop(n)
+                        if streaming:
+                            self.handle_resource_item(item = compl)
+                        else:
+                            yield compl
 
             except Exception as e:
                 logger.error(f'Error: {line}: {e}')
-        
-        yield from results.values()
+        self._stream_consumed = True
+        for remaining_result in results.values():
+            if streaming:
+                self.handle_resource_item(item = remaining_result)
+            else:
+                yield remaining_result
         if not self.usage.prompt_tokens:
             self.usage.prompt_tokens = get_chat_tokens_count(
                 messages = self.input_messages, 
                 model_name = self.chat_model.src_value
             )
         self.usage.total_tokens = self.usage.completion_tokens + self.usage.prompt_tokens
+        
     
     async def ahandle_stream(
         self,
-        response: aiohttpx.Response
-    ) -> AsyncIterator[Dict]:
+        response: aiohttpx.Response,
+        streaming: Optional[bool] = False,
+    ) -> AsyncIterator[Dict]:  # sourcery skip: low-code-quality
         """
         Handles the streaming response
         """
         results = {}
         async for line in aparse_stream(response):
+            # logger.info(f'line: {line}')
             try:
                 item = json.loads(line)
                 self.handle_stream_metadata(item)
+                if streaming:
+                    yield item
+
+                # logger.info(f'item: {item}')
                 for n, choice in enumerate(item['choices']):
                     if not results.get(n):
                         results[n] = {
@@ -339,13 +380,21 @@ class ChatResponse(BaseResponse):
                     else:
                         results[n]['finish_reason'] = choice['finish_reason']
                         self.usage.completion_tokens += 2  # every reply is primed with <im_start>assistant
-                        yield results.pop(n)
+                        compl = results.pop(n)
+                        if streaming:
+                            self.handle_resource_item(item = compl)
+                        else:
+                            yield compl
+
 
             except Exception as e:
                 logger.error(f'Error: {line}: {e}')
-        
+        self._stream_consumed = True
         for remaining_result in results.values():
-            yield remaining_result
+            if streaming:
+                self.handle_resource_item(item = remaining_result)
+            else:
+                yield remaining_result
         
         if not self.usage.prompt_tokens:
             self.usage.prompt_tokens = get_chat_tokens_count(
@@ -353,6 +402,19 @@ class ChatResponse(BaseResponse):
                 model_name = self.chat_model.src_value
             )
         self.usage.total_tokens = self.usage.completion_tokens + self.usage.prompt_tokens
+
+    if TYPE_CHECKING:
+        def stream(self, **kwargs) -> Generator[StreamedChatMessage, None, None]:
+            """
+            Streams the response
+            """
+            ...
+
+        async def astream(self, **kwargs) -> AsyncGenerator[StreamedChatMessage, None]:
+            """
+            Streams the response
+            """
+            ...
     
 
 
@@ -371,6 +433,7 @@ class ChatRoute(BaseRoute):
     def create(
         self, 
         input_object: Optional[ChatObject] = None,
+        parse_stream: Optional[bool] = True,
         **kwargs
     ) -> ChatResponse:
         """
@@ -461,11 +524,12 @@ class ChatRoute(BaseRoute):
 
         Returns: `ChatResponse`
         """
-        return super().create(input_object=input_object, **kwargs)
+        return super().create(input_object=input_object, parse_stream = parse_stream, **kwargs)
 
     async def async_create(
         self, 
         input_object: Optional[ChatObject] = None,
+        parse_stream: Optional[bool] = True,
         **kwargs
     ) -> ChatResponse:
         """
@@ -556,4 +620,4 @@ class ChatRoute(BaseRoute):
 
         Returns: `CompletionResult`
         """
-        return await super().async_create(input_object=input_object, **kwargs)
+        return await super().async_create(input_object = input_object, parse_stream = parse_stream, **kwargs)

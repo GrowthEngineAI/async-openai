@@ -4,7 +4,7 @@ import aiohttpx
 import contextlib
 
 from lazyops.types import BaseModel, lazyproperty
-from typing import Dict, Optional, Any, List, Type, Union, cast
+from typing import Dict, Optional, Any, List, Type, Union, Generator, AsyncGenerator, cast
 from async_openai.types.errors import error_handler
 from async_openai.types.resources import BaseResource, FileObject, Usage
 from async_openai.utils import logger
@@ -46,6 +46,8 @@ class BaseResponse(BaseResource):
     _response: Optional[aiohttpx.Response] = None
 
     _has_metadata: Optional[bool] = False
+    _stream_consumed: Optional[bool] = False
+    _stream_chunks: Optional[List[Any]] = None
 
 
     @property
@@ -85,6 +87,7 @@ class BaseResponse(BaseResource):
         return [
             "data_model", "choice_model", "event_model", 
             "excluded_params", "input_object", "resource_model", "input_model",
+            "_stream_consumed", "_stream_chunks",
             # "_response", "_has_metadata", "metadata_fields",
         ]
     
@@ -291,7 +294,6 @@ class BaseResponse(BaseResource):
             self.choices.append(self.choice_model.parse_obj(item))
 
         
-    
     def handle_event_item(
         self,
         item: Union[Dict, Any],
@@ -326,18 +328,17 @@ class BaseResponse(BaseResource):
         else:
             self.handle_data_item(item, **kwargs)
         
-    
     def construct_resource(
         self, 
+        parse_stream: Optional[bool] = True,
         **kwargs
     ):
         """
         Constructs the appropriate resource object
         from the response
         """
-        if not self.has_stream:
-            return self.handle_resource_item(item = self.response_json, **kwargs)
-        
+        if not self.has_stream: return self.handle_resource_item(item = self.response_json, **kwargs)
+        if not parse_stream: return
         for item in self.handle_stream(
             response = self._response
         ):
@@ -348,10 +349,12 @@ class BaseResponse(BaseResource):
                 )
             
             self.handle_resource_item(item = item, **kwargs)
+        self._stream_consumed = True
 
 
     async def aconstruct_resource(
         self, 
+        parse_stream: Optional[bool] = True,
         **kwargs
     ):
         """
@@ -359,6 +362,7 @@ class BaseResponse(BaseResource):
         from the response
         """
         if not self.has_stream: return self.handle_resource_item(item = self.response_json, **kwargs)
+        if not parse_stream: return
         async for item in self.ahandle_stream(response=self._response):
             if "error" in item:
                 raise error_handler(
@@ -367,21 +371,22 @@ class BaseResponse(BaseResource):
                 )
             
             self.handle_resource_item(item = item, **kwargs)
+        self._stream_consumed = True
     
         
-
     @classmethod
     def prepare_response(
         cls, 
         response: aiohttpx.Response,
         input_object: Type['BaseResource'],
+        parse_stream: Optional[bool] = True,
         **kwargs
     ) -> Type['BaseResponse']:
         """
         Handles the response and returns the appropriate object
         """
         resource = cls(_response = response, _input_object = input_object)
-        resource.construct_resource(**kwargs)
+        resource.construct_resource(parse_stream = parse_stream, **kwargs)
         return resource
     
     @classmethod
@@ -389,13 +394,14 @@ class BaseResponse(BaseResource):
         cls, 
         response: aiohttpx.Response,
         input_object: Type['BaseResource'],
+        parse_stream: Optional[bool] = True,
         **kwargs
     ) -> Type['BaseResponse']:
         """
         Handles the response and returns the appropriate object
         """
         resource = cls(_response = response, _input_object = input_object)
-        await resource.aconstruct_resource(**kwargs)
+        await resource.aconstruct_resource(parse_stream = parse_stream, **kwargs)
         return resource
 
 
@@ -422,3 +428,80 @@ class BaseResponse(BaseResource):
         if self.choices is None:
             self.construct_resource()
         return self.choices
+
+    """
+    New Handling of Stream Specific Responses
+    """
+
+    def parse_stream_item(self, item: Union[Dict, Any], **kwargs) -> Any:
+        """
+        Parses a single stream item
+        """
+        return item
+
+    def stream(self, **kwargs) -> Generator[Dict, None, None]:
+        """
+        Handles the stream
+        """
+        if self._stream_consumed:
+            yield from self._stream_chunks
+            return
+        self._stream_chunks = []
+        for item in self.handle_stream(response = self._response, streaming = True):
+            if "error" in item:
+                raise error_handler(response = self._response, data = item)
+            # self.handle_resource_item(item = item, **kwargs)
+            stream_item = self.parse_stream_item(item = item, **kwargs)
+            if stream_item is not None:
+                self._stream_chunks.append(stream_item)
+                yield stream_item
+        self._stream_consumed = True
+    
+    async def astream(self, **kwargs) -> AsyncGenerator[Dict, None]:
+        """
+        Handles the stream
+        """
+        if self._stream_consumed:
+            for stream_item in self._stream_chunks:
+                yield stream_item
+            return
+        self._stream_chunks = []
+        async for item in self.ahandle_stream(response = self._response, streaming = True):
+            if "error" in item:
+                raise error_handler(response = self._response, data = item)
+            # self.handle_resource_item(item = item, **kwargs)
+            stream_item = self.parse_stream_item(item = item, **kwargs)
+            if stream_item is not None:
+                self._stream_chunks.append(stream_item)
+                yield stream_item
+        self._stream_consumed = True
+        
+
+
+    # @classmethod
+    # def prepare_response_stream(
+    #     cls, 
+    #     response: aiohttpx.Response,
+    #     input_object: Type['BaseResource'],
+    #     **kwargs
+    # ) -> Type['BaseResponse']:
+    #     """
+    #     Handles the response and returns the appropriate object
+    #     """
+    #     resource = cls(_response = response, _input_object = input_object)
+    #     resource.construct_resource(**kwargs)
+    #     return resource
+    
+    # @classmethod
+    # async def aprepare_response_stream(
+    #     cls, 
+    #     response: aiohttpx.Response,
+    #     input_object: Type['BaseResource'],
+    #     **kwargs
+    # ) -> Type['BaseResponse']:
+    #     """
+    #     Handles the response and returns the appropriate object
+    #     """
+    #     resource = cls(_response = response, _input_object = input_object)
+    #     await resource.aconstruct_resource(**kwargs)
+    #     return resource

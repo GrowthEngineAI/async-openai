@@ -1,8 +1,9 @@
+import enum
 import json
 import aiohttpx
 
 from pydantic import root_validator, Field
-from typing import Optional, Type, Any, Union, List, Dict, Iterator, AsyncIterator
+from typing import Optional, Type, Any, Union, List, Dict, Iterator, AsyncIterator, Generator, AsyncGenerator, TYPE_CHECKING
 from lazyops.types import validator, lazyproperty
 
 from async_openai.types.options import OpenAIModel, get_consumption_cost
@@ -18,6 +19,15 @@ __all__ = [
     'CompletionResponse',
     'CompletionRoute',
 ]
+
+
+class CompletionKind(str, enum.Enum):
+    # Only have one choice
+    CONTENT = 'content'
+
+class StreamedCompletionChoice(BaseResource):
+    kind: CompletionKind = CompletionKind.CONTENT
+    value: str
 
 
 class CompletionChoice(BaseResource):
@@ -194,9 +204,21 @@ class CompletionResponse(BaseResponse):
         return data
 
 
+    def parse_stream_item(self, item: Union[Dict, Any], **kwargs) -> Optional[StreamedCompletionChoice]:
+        """
+        Parses a single stream item
+        """
+        choice = item['choices'][0]
+        if choice['finish_reason'] == 'stop':
+            return None
+        return StreamedCompletionChoice(
+            value = choice['text']
+        )
+
     def handle_stream(
         self,
-        response: aiohttpx.Response
+        response: aiohttpx.Response,
+        streaming: Optional[bool] = False,
     ) -> Iterator[Dict]:
         """
         Handles the streaming response
@@ -205,6 +227,8 @@ class CompletionResponse(BaseResponse):
         for line in parse_stream(response):
             try:
                 item = json.loads(line)
+                if streaming:
+                    yield item
                 self.handle_stream_metadata(item)
                 for n, choice in enumerate(item['choices']):
                     if not texts.get(n):
@@ -219,18 +243,28 @@ class CompletionResponse(BaseResponse):
 
                     else:
                         texts[n]['finish_reason'] = choice['finish_reason']
-                        yield texts.pop(n)
+                        compl = texts.pop(n)
+                        if streaming:
+                            self.handle_resource_item(item = compl)
+                        else:
+                            yield compl
 
             except Exception as e:
                 logger.error(f'Error: {line}: {e}')
 
-        yield from texts.values()
+        self._stream_consumed = True
+        for remaining_text in texts.values():
+            if streaming:
+                self.handle_resource_item(item = remaining_text)
+            else:
+                yield remaining_text
         self.usage.total_tokens = self.usage.completion_tokens
     
 
     async def ahandle_stream(
         self,
-        response: aiohttpx.Response
+        response: aiohttpx.Response,
+        streaming: Optional[bool] = False,
     ) -> AsyncIterator[Dict]:
         """
         Handles the streaming response
@@ -239,6 +273,8 @@ class CompletionResponse(BaseResponse):
         async for line in aparse_stream(response):
             try:
                 item = json.loads(line)
+                if streaming:
+                    yield item
                 self.handle_stream_metadata(item)
                 for n, choice in enumerate(item['choices']):
                     if not texts.get(n):
@@ -253,15 +289,36 @@ class CompletionResponse(BaseResponse):
 
                     else:
                         texts[n]['finish_reason'] = choice['finish_reason']
-                        yield texts.pop(n)
+                        compl = texts.pop(n)
+                        if streaming:
+                            self.handle_resource_item(item = compl)
+                        else:
+                            yield compl
 
             except Exception as e:
                 logger.error(f'Error: {line}: {e}')
 
+        self._stream_consumed = True
         for remaining_text in texts.values():
-            yield remaining_text
+            if streaming:
+                self.handle_resource_item(item = remaining_text)
+            else:
+                yield remaining_text
         self.usage.total_tokens = self.usage.completion_tokens
 
+    if TYPE_CHECKING:
+        def stream(self, **kwargs) -> Generator[StreamedCompletionChoice, None, None]:
+            """
+            Streams the response
+            """
+            ...
+
+        async def astream(self, **kwargs) -> AsyncGenerator[StreamedCompletionChoice, None]:
+            """
+            Streams the response
+            """
+            ...
+    
 
 class CompletionRoute(BaseRoute):
     input_model: Optional[Type[BaseResource]] = CompletionObject
@@ -278,6 +335,7 @@ class CompletionRoute(BaseRoute):
     def create(
         self, 
         input_object: Optional[CompletionObject] = None,
+        parse_stream: Optional[bool] = True,
         **kwargs
     ) -> CompletionResponse:
         """
@@ -386,11 +444,12 @@ class CompletionRoute(BaseRoute):
 
         Returns: `CompletionResult`
         """
-        return super().create(input_object=input_object, **kwargs)
+        return super().create(input_object = input_object, parse_stream = parse_stream, **kwargs)
 
     async def async_create(
         self, 
         input_object: Optional[CompletionObject] = None,
+        parse_stream: Optional[bool] = True,
         **kwargs
     ) -> CompletionResponse:
         """
@@ -499,4 +558,4 @@ class CompletionRoute(BaseRoute):
 
         Returns: `CompletionResult`
         """
-        return await super().async_create(input_object=input_object, **kwargs)
+        return await super().async_create(input_object = input_object, parse_stream = parse_stream,  **kwargs)

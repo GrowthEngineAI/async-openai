@@ -132,7 +132,8 @@ class BaseResource(BaseModel):
 
     @staticmethod
     def handle_stream(
-        response: aiohttpx.Response
+        response: aiohttpx.Response,
+        streaming: Optional[bool] = False,
     ) -> Iterator[Dict]:
         """
         Handles the stream response
@@ -146,7 +147,8 @@ class BaseResource(BaseModel):
     
     @staticmethod
     async def ahandle_stream(
-        response: aiohttpx.Response
+        response: aiohttpx.Response,
+        streaming: Optional[bool] = False,
     ) -> AsyncIterator[Dict]:
         """
         Handles the stream response

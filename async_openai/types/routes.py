@@ -153,6 +153,7 @@ class BaseRoute(BaseModel):
         self, 
         input_object: Optional[Type[BaseResource]] = None,
         headers: Optional[Dict[str, str]] = None,
+        parse_stream: Optional[bool] = True,
         **kwargs
     ):
         """
@@ -176,16 +177,18 @@ class BaseRoute(BaseModel):
             data = self.encode_data(data),
             headers = headers,
             timeout = self.timeout,
+            stream = input_object.get('stream'),
             **kwargs
         )
         data = self.handle_response(api_response)
-        return self.prepare_response(data, input_object = input_object)
+        return self.prepare_response(data, input_object = input_object, parse_stream = parse_stream)
     
 
     async def async_create(
         self, 
         input_object: Optional[Type[BaseResource]] = None,
         headers: Optional[Dict[str, str]] = None,
+        parse_stream: Optional[bool] = True,
         **kwargs
     ):
         """
@@ -209,10 +212,11 @@ class BaseRoute(BaseModel):
             data = self.encode_data(data),
             headers = headers,
             timeout = self.timeout,
+            stream = input_object.get('stream'),
             **kwargs
         )
         data = self.handle_response(api_response)
-        return await self.aprepare_response(data, input_object = input_object)
+        return await self.aprepare_response(data, input_object = input_object, parse_stream = parse_stream)
     
     def batch_create(
         self, 
@@ -828,6 +832,7 @@ class BaseRoute(BaseModel):
         data: aiohttpx.Response,
         input_object: Optional[Type[BaseResource]] = None,
         response_object: Optional[Type[BaseResource]] = None,
+        parse_stream: Optional[bool] = True,
         **kwargs
     ):
         """
@@ -838,7 +843,7 @@ class BaseRoute(BaseModel):
         """
         response_object = response_object or self.response_model
         if response_object:
-            return response_object.prepare_response(data, input_object = input_object)
+            return response_object.prepare_response(data, input_object = input_object, parse_stream = parse_stream)
         raise NotImplementedError('Response model not defined for this resource.')
 
 
@@ -847,6 +852,7 @@ class BaseRoute(BaseModel):
         data: aiohttpx.Response,
         input_object: Optional[Type[BaseResource]] = None,
         response_object: Optional[Type[BaseResource]] = None,
+        parse_stream: Optional[bool] = True,
         **kwargs
     ):
         """
@@ -857,7 +863,7 @@ class BaseRoute(BaseModel):
         """
         response_object = response_object or self.response_model
         if response_object:
-            return await response_object.aprepare_response(data, input_object = input_object)
+            return await response_object.aprepare_response(data, input_object = input_object, parse_stream = parse_stream)
         raise NotImplementedError('Response model not defined for this resource.')
 
     def handle_response(
@@ -870,10 +876,15 @@ class BaseRoute(BaseModel):
 
         :param response: The Response
         """
+        is_stream = not hasattr(response, "_content")
         if self.debug_enabled:
-            logger.info(f'[{response.status_code} - {response.request.url}] headers: {response.headers}, body: {response.text[:250]}')
+            if is_stream:
+                logger.info(f'[Stream] [{response.status_code} - {response.request.url}] headers: {response.headers}')
+            else:
+                logger.info(f'[{response.status_code} - {response.request.url}] headers: {response.headers}, body: {response.text[:250]}')
         
         if response.status_code in self.success_codes:
+            if is_stream: return response
             return response if response.content else None
         
         if self.ignore_errors: return None
@@ -892,6 +903,7 @@ class BaseRoute(BaseModel):
         headers: Optional[Dict[str, Any]] = None,
         timeout: Optional[int] = None,
         max_retries: Optional[int] = None,
+        stream: Optional[bool] = False,
         **kwargs
     ) -> aiohttpx.Response:
         """
@@ -899,15 +911,7 @@ class BaseRoute(BaseModel):
         """
         if timeout is None: timeout = self.timeout
         if self.debug_enabled: logger.info(f'[{method} - {url}] headers: {headers}, params: {params}, data: {data}')
-
-        request_func = self.client.request
-        if self.retry_function is not None:
-            request_func = self.retry_function(request_func)
-        elif not self.disable_retries:
-            if max_retries is None: max_retries = get_max_retries()
-            request_func = get_retry_wrapper(max_retries=max_retries)(request_func)
-        
-        return request_func(
+        request = self.client.build_request(
             method = method,
             url = url,
             params = params,
@@ -916,6 +920,13 @@ class BaseRoute(BaseModel):
             timeout = timeout,
             **kwargs
         )
+        request_func = self.client.send
+        if self.retry_function is not None:
+            request_func = self.retry_function(request_func)
+        elif not self.disable_retries:
+            if max_retries is None: max_retries = get_max_retries()
+            request_func = get_retry_wrapper(max_retries=max_retries)(request_func)
+        return request_func(request, stream = stream)
 
     
     async def _async_send(
@@ -927,6 +938,7 @@ class BaseRoute(BaseModel):
         headers: Optional[Dict[str, Any]] = None,
         timeout: Optional[int] = None,
         max_retries: Optional[int] = None,
+        stream: Optional[bool] = False,
         **kwargs
     ) -> aiohttpx.Response:
         """
@@ -935,15 +947,7 @@ class BaseRoute(BaseModel):
         
         if timeout is None: timeout = self.timeout
         if self.debug_enabled: logger.info(f'[{method} - {url}] headers: {headers}, params: {params}, data: {data}')
-
-        request_func = self.client.async_request
-        if self.retry_function is not None:
-            request_func = self.retry_function(request_func)
-        elif not self.disable_retries:
-            if max_retries is None: max_retries = get_max_retries()
-            request_func = get_retry_wrapper(max_retries = max_retries)(request_func)
-        
-        return await request_func(
+        request = await self.client.async_build_request(
             method = method,
             url = url,
             params = params,
@@ -952,6 +956,13 @@ class BaseRoute(BaseModel):
             timeout = timeout,
             **kwargs
         )
+        request_func = self.client.async_send
+        if self.retry_function is not None:
+            request_func = self.retry_function(request_func)
+        elif not self.disable_retries:
+            if max_retries is None: max_retries = get_max_retries()
+            request_func = get_retry_wrapper(max_retries = max_retries)(request_func)
+        return await request_func(request, stream = stream)
     
     def prepare_index_response(
         self, 
