@@ -48,6 +48,7 @@ class BaseResponse(BaseResource):
     _has_metadata: Optional[bool] = False
     _stream_consumed: Optional[bool] = False
     _stream_chunks: Optional[List[Any]] = None
+    _response_data: Optional[Union[Dict, List, Any]] = None
 
 
     @property
@@ -87,7 +88,7 @@ class BaseResponse(BaseResource):
         return [
             "data_model", "choice_model", "event_model", 
             "excluded_params", "input_object", "resource_model", "input_model",
-            "_stream_consumed", "_stream_chunks",
+            "_stream_consumed", "_stream_chunks", "_response_data",
             # "_response", "_has_metadata", "metadata_fields",
         ]
     
@@ -224,8 +225,16 @@ class BaseResponse(BaseResource):
     def __iter__(self):
         return iter(self.resource_data)
     
-    def __getitem__(self, idx: int) -> Union[Type[BaseModel], Dict, Any]:
-        return self.resource_data[idx] if self.resource_data else None
+    def __getitem__(self, key: Union[str, int]) -> Union[Type[BaseModel], Dict, Any]:
+        """
+        Returns the appropriate data object from the response to support more
+        native access to the response data
+        """
+        if isinstance(key, str):
+            if not self._response_data:
+                self._response_data = self._response.json()
+            return self._response_data.get(key)
+        return self.resource_data[key] if self.resource_data else None
     
     """
     Response Handling Methods
