@@ -1,4 +1,5 @@
 import json
+import logging
 import pathlib
 import aiohttpx
 from typing import Optional, Dict, Union, Any
@@ -7,6 +8,14 @@ from async_openai.version import VERSION
 from async_openai.types.options import ApiType
 
 _should_reset_api: bool = False
+
+def configure_httpx_logger(level: int = logging.ERROR):
+    """
+    Helper Method to Disable HTTPX Logger
+    """
+    httpx_logger = logging.getLogger("httpx")
+    httpx_logger.setLevel(level)
+
 
 class OpenAIContext(BaseModel):
     """
@@ -390,6 +399,17 @@ class BaseOpenAISettings(BaseSettings):
         if keepalive_expiry is not None: self.keepalive_expiry = keepalive_expiry
         if custom_headers is not None: self.ctx.update_headers(custom_headers)
 
+    def disable_httpx_logger(self):
+        """
+        Disables the HTTPX Logger
+        """
+        configure_httpx_logger(logging.ERROR)
+    
+    def enable_httpx_logger(self):
+        """
+        Enables the HTTPX Logger
+        """
+        configure_httpx_logger(logging.INFO)
 
 
 class AzureOpenAISettings(BaseOpenAISettings):

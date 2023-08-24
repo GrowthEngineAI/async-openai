@@ -1,6 +1,11 @@
 # Changelogs
 
+#### v0.0.33 (2023-08-24)
+
 **Changes**
+
+- Updated auto-configuring `httpx`'s logger to be disabled if `debug_enabled` is set to `False`.
+
 
 #### v0.0.32 (2023-08-23)
 

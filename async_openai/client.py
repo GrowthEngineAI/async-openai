@@ -226,6 +226,8 @@ class OpenAIClient:
 
         if kwargs: self._kwargs = kwargs
         self.log_method = logger.info if self.debug_enabled else logger.debug
+        if not self.debug_enabled:
+            self.settings.disable_httpx_logger()
         # if self.debug_enabled:
         #     logger.info(f"OpenAI Client Configured: {self.client.base_url}")
         #     logger.debug(f"Debug Enabled: {self.debug_enabled}")
