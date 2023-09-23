@@ -44,6 +44,12 @@ class ChatMessage(BaseResource):
         """
         return getattr(self, key, default)
 
+    def __getitem__(self, key: str) -> Any:
+        """
+        Mimic dict
+        """
+        return getattr(self, key)
+
 
 class ChatChoice(BaseResource):
     message: ChatMessage
@@ -51,6 +57,11 @@ class ChatChoice(BaseResource):
     logprobs: Optional[Any]
     finish_reason: Optional[str]
 
+    def __getitem__(self, key: str) -> Any:
+        """
+        Mimic dict
+        """
+        return getattr(self, key)
 
 
 class ChatObject(BaseResource):
