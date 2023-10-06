@@ -12,27 +12,25 @@
 - [ ] Supports all API endpoints
 
     - [x] `Completions`: [Docs](https://beta.openai.com/docs/api-reference/completions)
+
+    - [x] `Chat`: [Docs](https://beta.openai.com/docs/api-reference/chat)
     
     - [x] `Edits`: [Docs](https://beta.openai.com/docs/api-reference/edits)
     
     - [x] `Embeddings`: [Docs](https://beta.openai.com/docs/api-reference/embeddings)
 
-    - [ ] `Images`: [Docs](https://beta.openai.com/docs/api-reference/images)
-
-    - [ ] `Files`: [Docs](https://beta.openai.com/docs/api-reference/files)
-
-    - [ ] `Finetuning`: [Docs](https://beta.openai.com/docs/api-reference/fine-tunes)
-
     - [x] `Models`: [Docs](https://beta.openai.com/docs/api-reference/models)
-
-    - [ ] `Moderations`: [Docs](https://beta.openai.com/docs/api-reference/moderations)
-
-    - [ ] `Search`: [Docs](#)
 
 - [x] Strongly typed validation of requests and responses with `Pydantic` Models with transparent 
     access to the raw response and object-based results.
 
-- [x] Handles Retries automatically through `backoff`
+- [x] Handles Retries automatically through `backoff` and custom retry logic.
+   
+   - [x] Handles `rate_limit` errors and retries automatically. (when passing `auto_retry = True`)
+
+- [x] Supports Multiple Clients and Auto-Rotation of Clients
+
+- [x] Supports `Azure` API
 
 - [x] Supports Local and Remote Cloud Object Storage File Handling Asyncronously through `file-io`
 
