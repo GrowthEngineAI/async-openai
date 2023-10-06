@@ -1,5 +1,16 @@
 # Changelogs
 
+#### v0.0.34 (2023-10-06)
+
+**Changes** 
+
+- Updated default `api_version` to `2023-07-01-preview`
+- Added `__getitem__` attributes to completion and chat objects, allowing them to act like `dict` objects.
+- Added `functions` and `function_call` to `Chat` completion routes.
+  - `function.properties` can pass through a `pydantic` object which will convert it automatically to a `dict` json schema.
+- Added `function_call` attribute in `ChatMessage` objects, allowing for easy access to the function call.
+- Streaming is not supported for `functions` at this time.
+
 #### v0.0.33 (2023-08-24)
 
 **Changes**

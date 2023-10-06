@@ -168,8 +168,8 @@ class ApiType(str, Enum):
         self, 
         version: Optional[str] = None
     ):
-        if self.value in {"azure", "azure_ad", "azuread"}:
-            return "2023-03-15-preview"
+        if self.value in {"azure", "azure_ad", "azuread"} and not version:
+            return "2023-07-01-preview"
         return version
 
 

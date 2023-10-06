@@ -36,6 +36,12 @@ class CompletionChoice(BaseResource):
     logprobs: Optional[Any]
     finish_reason: Optional[str]
 
+    def __getitem__(self, key: str) -> Any:
+        """
+        Mimic dict
+        """
+        return getattr(self, key)
+
 
 class CompletionObject(BaseResource):
     prompt: Union[List[str], str] = '<|endoftext|>'
@@ -203,6 +209,11 @@ class CompletionResponse(BaseResponse):
             data['completion_model'] = data['completion_model'].dict()
         return data
 
+    def __getitem__(self, key: str) -> Any:
+        """
+        Mimic dict
+        """
+        return getattr(self, key)
 
     def parse_stream_item(self, item: Union[Dict, Any], **kwargs) -> Optional[StreamedCompletionChoice]:
         """

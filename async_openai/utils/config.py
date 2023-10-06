@@ -418,7 +418,7 @@ class AzureOpenAISettings(BaseOpenAISettings):
     """
 
     api_type: Optional[ApiType] = ApiType.azure
-    api_version: Optional[str] = "2023-03-15-preview"
+    api_version: Optional[str] = "2023-07-01-preview"
     api_path: Optional[str] = None
 
     class Config:

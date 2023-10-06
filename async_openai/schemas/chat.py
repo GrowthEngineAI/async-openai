@@ -1,7 +1,8 @@
 import json
-import aiohttpx
 import enum
-from pydantic import root_validator, Field
+import aiohttpx
+import contextlib
+from pydantic import root_validator, Field, BaseModel
 from typing import Optional, Type, Any, Union, List, Dict, Iterator, AsyncIterator, Generator, AsyncGenerator, TYPE_CHECKING
 from lazyops.types import validator, lazyproperty
 
@@ -29,10 +30,33 @@ class StreamedChatMessage(BaseResource):
     kind: MessageKind
     value: str
 
+class FunctionCall(BaseResource):
+    name: str
+    arguments: Optional[Union[str, Dict[str, Any]]] = None
+
+    @validator('arguments', pre = True, always = True)
+    def validate_arguments(cls, v) -> Dict[str, Any]:
+        """
+        Try to load the arguments as json
+        """
+        if isinstance(v, dict):
+            return v
+        elif isinstance(v, str):
+            with contextlib.suppress(Exception):
+                return json.loads(v)
+        return v
+    
+    def __getitem__(self, key: str) -> Any:
+        """
+        Mimic dict
+        """
+        return getattr(self, key)
+
 # TODO Add support for name
 class ChatMessage(BaseResource):
-    content: str
+    content: Optional[str] = None
     role: Optional[str] = "user"
+    function_call: Optional[FunctionCall] = None
     name: Optional[str] = None
 
     def dict(self, *args, exclude_none: bool = True, **kwargs):
@@ -63,6 +87,26 @@ class ChatChoice(BaseResource):
         """
         return getattr(self, key)
 
+class Function(BaseResource):
+    """
+    Represents a function
+    """
+    # Must be a-z, A-Z, 0-9, or contain underscores and dashes
+    name: str = Field(..., max_length = 64, regex = r'^[a-zA-Z0-9_]+$')
+    parameters: Union[Dict[str, Any], BaseModel, str]
+    description: Optional[str] = None
+
+    @validator('parameters', pre = True, always = True)
+    def validate_parameters(cls, v) -> Dict[str, Any]:
+        """
+        Validate the parameters
+        """
+        if isinstance(v, dict):
+            return v
+        elif issubclass(v, BaseModel):
+            return v.schema()
+        raise ValueError(f'Parameters must be a dict or pydantic BaseModel. Provided: {type(v)}')
+
 
 class ChatObject(BaseResource):
     messages: Union[List[ChatMessage], str]
@@ -79,6 +123,10 @@ class ChatObject(BaseResource):
     frequency_penalty: Optional[float] = 0.0
     logit_bias: Optional[Dict[str, float]] = None
     user: Optional[str] = None
+
+    functions: Optional[List[Function]] = None
+    function_call: Optional[str] = None
+
     validate_max_tokens: Optional[bool] = Field(default = True, exclude = True)
 
     # api_version: Optional[str] = None
@@ -177,7 +225,11 @@ class ChatObject(BaseResource):
                 model_name = values['model'].src_value,
                 max_tokens = values.get('max_tokens')
             )
-        
+        if values.get('functions'):
+            if not all(isinstance(f, Function) for f in values['functions']):
+                values['functions'] = [Function(**f) for f in values['functions']]
+            if not values.get('function_call'):
+                values['function_call'] = 'auto'
         return values
 
 
@@ -192,6 +244,13 @@ class ChatResponse(BaseResponse):
         if self.choices_results:
             return [choice.message for choice in self.choices]
         return self._response.text
+    
+    @lazyproperty
+    def function_results(self) -> List[FunctionCall]:
+        """
+        Returns the function results for the completions
+        """
+        return [msg.function_call for msg in self.messages if msg.function_call]
 
     @lazyproperty
     def input_text(self) -> str:
@@ -281,6 +340,13 @@ class ChatResponse(BaseResponse):
         if data.get('chat_model'):
             data['chat_model'] = data['chat_model'].dict()
         return data
+    
+
+    def __getitem__(self, key: str) -> Any:
+        """
+        Mimic dict
+        """
+        return getattr(self, key)
     
 
     def parse_stream_item(self, item: Union[Dict, Any], **kwargs) -> Optional[StreamedChatMessage]:
