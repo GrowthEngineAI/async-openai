@@ -166,6 +166,14 @@ class RotatingClients:
             self.clients[client_name] = self.init_api_client(client_name = client_name, **kwargs)
         return self.clients[client_name]
 
+    def __getitem__(self, key: Union[str, int]) -> 'OpenAIClient':
+        """
+        Returns a client by name.
+        """
+        if isinstance(key, int):
+            key = self.rotate_client_names[key] if self.rotate_client_names else self.client_names[key]
+        return self.clients[key]
+
 # Model Mapping for Azure
 DefaultModelMapping = {
     'gpt-3.5-turbo': 'gpt-35-turbo',
@@ -717,10 +725,14 @@ class OpenAIMetaClass(type):
     async def __aexit__(cls, exc_type, exc_value, traceback):
         await cls.async_close()
 
-    def __getitem__(cls, key: str) -> 'OpenAIClient':
+    def __getitem__(cls, key: Union[int, str]) -> 'OpenAIClient':
         """
         Returns the OpenAI API Client.
         """
+        if cls.enable_rotating_clients:
+            return cls.apis[key]
+        if isinstance(key, int):
+            key = cls.client_names[key]
         return cls._clients[key]
     
     @property

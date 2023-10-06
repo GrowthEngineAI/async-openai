@@ -121,7 +121,7 @@ result: CompletionResponse = asyncio.run(
 
 ```
 
-### Initialize Clients Manually
+### Initialize Clients Manually, and working with multiple clients
 
 ```python
 
@@ -161,6 +161,27 @@ result = OpenAI.completions.create(
 )
 # Or 
 result = oai.completions.create(
+    prompt = 'say this is a test',
+    max_tokens = 4,
+    stream = True
+)
+
+# You can select the different clients by name or index
+result = OpenAI['az'].completions.create(
+    prompt = 'say this is a test',
+    max_tokens = 4,
+    stream = True
+)
+
+# Use the default client (openai)
+result = OpenAI['default'].completions.create(
+    prompt = 'say this is a test',
+    max_tokens = 4,
+    stream = True
+)
+
+# Will use the `default` client since it was initialized first
+result = OpenAI[0].completions.create(
     prompt = 'say this is a test',
     max_tokens = 4,
     stream = True
@@ -292,6 +313,59 @@ Result:
 
 ```
 
+### Configure Azure Model Mapping
+
+Your azure models may be named differently than the default mapping. By configuring the mapping, you can automatically map the models to the correct azure model (when using openai model names).
+
+```python
+
+from async_openai import OpenAI
+
+"""
+Default Azure Model Mapping
+{
+    'gpt-3.5-turbo': 'gpt-35-turbo',
+    'gpt-3.5-turbo-16k': 'gpt-35-turbo-16k',
+    'gpt-3.5-turbo-instruct': 'gpt-35-turbo-instruct',
+    'gpt-3.5-turbo-0301': 'gpt-35-turbo-0301',
+    'gpt-3.5-turbo-0613': 'gpt-35-turbo-0613',
+}
+"""
+
+AzureModelMapping = {
+    'gpt-3.5-turbo': 'azure-gpt-35-turbo',
+    'gpt-3.5-turbo-16k': 'azure-gpt-35-turbo-16k',
+    'gpt-3.5-turbo-instruct': 'azure-gpt-35-turbo-instruct',
+    'gpt-3.5-turbo-0301': 'azure-gpt-35-turbo-0301',
+    'gpt-3.5-turbo-0613': 'azure-gpt-35-turbo-0613',
+}
+
+OpenAI.configure(
+    api_key = "sk-XXXX",
+    organization = "org-XXXX",
+    debug_enabled = False,
+
+    # Azure Configuration
+    azure_api_base = 'https://....openai.azure.com/',
+    azure_api_version = '2023-07-01-preview',
+    azure_api_key = '....',
+    azure_model_mapping = AzureModelMapping,
+)
+
+# This will now use the azure endpoint as the default client
+OpenAI.init_api_client('az', set_as_default = True, debug_enabled = True)
+
+# This will automatically map "gpt-3.5-turbo-16k" -> "azure-gpt-35-turbo-16k"
+result: ChatResponse = OpenAI.chat.create(
+    model = "gpt-3.5-turbo-16k",
+    messages = [
+        {"role": "user", "content": "Translate the following English text to French: “Multiple models, each with different capabilities and price points. Prices are per 1,000 tokens. You can think of tokens as pieces of words, where 1,000 tokens is about 750 words. This paragraph is 35 tokens”"}
+    ],
+    auto_retry = True,
+)
+
+
+```
 
 
 ---
