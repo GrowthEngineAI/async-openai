@@ -243,3 +243,29 @@ def error_handler(
 
 
 
+class MaxRetriesExceeded(Exception):
+    def __init__(
+        self,
+        attempts: int,
+        base_exception: OpenAIError,
+    ):
+        self.attempts = attempts
+        self.ex = base_exception
+    
+    def __str__(self):
+        return f"Max {self.attempts} retries exceeded: {str(self.ex)}"
+        
+        
+    @property
+    def user_message(self):
+        """
+        Returns the error message.
+        """
+        return f"Max {self.attempts} retries exceeded: {self.ex.user_message}"
+    
+    def __repr__(self):
+        """
+        Returns the string representation of the error.
+        """
+        return f"{repr(self.ex)} (attempts={self.attempts})"
+        

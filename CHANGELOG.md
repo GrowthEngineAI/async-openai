@@ -1,5 +1,21 @@
 # Changelogs
 
+#### v0.0.35 (2023-10-06)
+
+**Additions**
+
+- Added `auto_retry` option to `OpenAI` client, which will automatically retry failed requests.
+- Added `RotatingClients` class which handles the rotation of multiple clients. This can be enabled by passing `rotating_clients=True` to the `OpenAI` client while configuring.
+- Added `OpenAI.chat_create` and `OpenAI.async_chat_create` methods which automatically handles rotating clients and retrying failed requests.
+- Added `azure_model_mapping` which allows automatically mapping of Azure models to OpenAI models when passing `openai` models as a parameter, it will automatically convert it to the Azure model. This is only done in `chat` implementation.
+
+**Fixes**
+
+- Fixed `api_version` Configuration handling.
+- Fixed parsing of `function_call` in streaming implementation.
+
+
+
 #### v0.0.34 (2023-10-06)
 
 **Changes** 

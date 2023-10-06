@@ -1,7 +1,9 @@
 import enum
 import json
+import time
+import asyncio
 import aiohttpx
-
+import contextlib
 from pydantic import root_validator, Field
 from typing import Optional, Type, Any, Union, List, Dict, Iterator, AsyncIterator, Generator, AsyncGenerator, TYPE_CHECKING
 from lazyops.types import validator, lazyproperty
@@ -10,6 +12,7 @@ from async_openai.types.options import OpenAIModel, get_consumption_cost
 from async_openai.types.resources import BaseResource, Usage
 from async_openai.types.responses import BaseResponse
 from async_openai.types.routes import BaseRoute
+from async_openai.types.errors import RateLimitError, APIError, MaxRetriesExceeded
 from async_openai.utils import logger, get_max_tokens, get_token_count, parse_stream, aparse_stream
 
 
@@ -347,6 +350,8 @@ class CompletionRoute(BaseRoute):
         self, 
         input_object: Optional[CompletionObject] = None,
         parse_stream: Optional[bool] = True,
+        auto_retry: Optional[bool] = False,
+        auto_retry_limit: Optional[int] = None,
         **kwargs
     ) -> CompletionResponse:
         """
@@ -453,14 +458,83 @@ class CompletionRoute(BaseRoute):
         monitor and detect abuse.
         Default: `None`
 
+        :auto_retry (optional): Whether to automatically retry the request if it fails due to a rate limit error.
+
+        :auto_retry_limit (optional): The maximum number of times to retry the request if it fails due to a rate limit error.
+
         Returns: `CompletionResult`
         """
-        return super().create(input_object = input_object, parse_stream = parse_stream, **kwargs)
+        current_attempt = kwargs.pop('_current_attempt', 0)
+        if not auto_retry:
+            return super().create(input_object = input_object, parse_stream = parse_stream, **kwargs)
+        
+        # Handle Auto Retry Logic
+        if not auto_retry_limit: auto_retry_limit = self.settings.max_retries
+        try:
+            return super().create(input_object = input_object, parse_stream = parse_stream, **kwargs)
+        except RateLimitError as e:
+            if current_attempt >= auto_retry_limit:
+                raise MaxRetriesExceeded(attempts=current_attempt, base_exception=e) from e
+            sleep_interval = 15.0
+            with contextlib.suppress(Exception):
+                if 'Please retry after' in str(e):
+                    sleep_interval = (
+                        float(
+                            str(e)
+                            .split("Please retry after")[1]
+                            .split("second")[0]
+                            .strip()
+                        )
+                        * 1.5
+                    )
+            logger.warning(f'[{current_attempt}/{auto_retry_limit}] Rate Limit Error. Sleeping for {sleep_interval} seconds')
+            time.sleep(sleep_interval)
+            current_attempt += 1
+            return self.create(
+                input_object = input_object,
+                parse_stream = parse_stream,
+                auto_retry = auto_retry,
+                auto_retry_limit = auto_retry_limit,
+                _current_attempt = current_attempt,
+                **kwargs
+            )
+        except APIError as e:
+            if current_attempt >= auto_retry_limit:
+                raise MaxRetriesExceeded(attempts=current_attempt, base_exception=e) from e
+            logger.warning(f'[{current_attempt}/{auto_retry_limit}] API Error: {e}. Sleeping for 10 seconds')
+            time.sleep(10.0)
+            current_attempt += 1
+            return self.create(
+                input_object = input_object,
+                parse_stream = parse_stream,
+                auto_retry = auto_retry,
+                auto_retry_limit = auto_retry_limit,
+                _current_attempt = current_attempt,
+                **kwargs
+            )
+
+        except Exception as e:
+            if current_attempt >= auto_retry_limit:
+                raise MaxRetriesExceeded(attempts=current_attempt, base_exception=e) from e
+            logger.warning(f'[{current_attempt}/{auto_retry_limit}] Unknown Error: {e}. Sleeping for 10 seconds')
+            time.sleep(10.0)
+            current_attempt += 1
+            return self.create(
+                input_object = input_object,
+                parse_stream = parse_stream,
+                auto_retry = auto_retry,
+                auto_retry_limit = auto_retry_limit,
+                _current_attempt = current_attempt,
+                **kwargs
+            )
+
 
     async def async_create(
         self, 
         input_object: Optional[CompletionObject] = None,
         parse_stream: Optional[bool] = True,
+        auto_retry: Optional[bool] = False,
+        auto_retry_limit: Optional[int] = None,
         **kwargs
     ) -> CompletionResponse:
         """
@@ -567,6 +641,76 @@ class CompletionRoute(BaseRoute):
         monitor and detect abuse.
         Default: `None`
 
+        :auto_retry (optional): Whether to automatically retry the request if it fails due to a rate limit error.
+
+        :auto_retry_limit (optional): The maximum number of times to retry the request if it fails due to a rate limit error.
+
         Returns: `CompletionResult`
         """
-        return await super().async_create(input_object = input_object, parse_stream = parse_stream,  **kwargs)
+        
+        current_attempt = kwargs.pop('_current_attempt', 0)
+        if not auto_retry:
+            return await super().async_create(input_object = input_object, parse_stream = parse_stream,  **kwargs)
+
+        # Handle Auto Retry Logic
+        if not auto_retry_limit: auto_retry_limit = self.settings.max_retries
+        try:
+            return await super().async_create(input_object = input_object, parse_stream = parse_stream, **kwargs)
+        except RateLimitError as e:
+            if current_attempt >= auto_retry_limit:
+                raise MaxRetriesExceeded(attempts=current_attempt, base_exception=e) from e
+            sleep_interval = 15.0
+            with contextlib.suppress(Exception):
+                if 'Please retry after' in str(e):
+                    sleep_interval = (
+                        float(
+                            str(e)
+                            .split("Please retry after")[1]
+                            .split("second")[0]
+                            .strip()
+                        )
+                        * 1.5
+                    )
+            logger.warning(f'[{current_attempt}/{auto_retry_limit}] Rate Limit Error. Sleeping for {sleep_interval} seconds')
+            await asyncio.sleep(sleep_interval)
+            current_attempt += 1
+            return await self.async_create(
+                input_object = input_object,
+                parse_stream = parse_stream,
+                auto_retry = auto_retry,
+                auto_retry_limit = auto_retry_limit,
+                _current_attempt = current_attempt,
+                **kwargs
+            )
+        except APIError as e:
+            if current_attempt >= auto_retry_limit:
+                raise MaxRetriesExceeded(attempts=current_attempt, base_exception=e) from e
+            logger.warning(f'[{current_attempt}/{auto_retry_limit}] API Error: {e}. Sleeping for 10 seconds')
+            await asyncio.sleep(10.0)
+            current_attempt += 1
+            return await self.async_create(
+                input_object = input_object,
+                parse_stream = parse_stream,
+                auto_retry = auto_retry,
+                auto_retry_limit = auto_retry_limit,
+                _current_attempt = current_attempt,
+                **kwargs
+            )
+
+        except Exception as e:
+            if current_attempt >= auto_retry_limit:
+                raise MaxRetriesExceeded(attempts=current_attempt, base_exception=e) from e
+            logger.warning(f'[{current_attempt}/{auto_retry_limit}] Unknown Error: {e}. Sleeping for 10 seconds')
+            await asyncio.sleep(10.0)
+            current_attempt += 1
+            return await self.async_create(
+                input_object = input_object,
+                parse_stream = parse_stream,
+                auto_retry = auto_retry,
+                auto_retry_limit = auto_retry_limit,
+                _current_attempt = current_attempt,
+                **kwargs
+            )
+
+
+    

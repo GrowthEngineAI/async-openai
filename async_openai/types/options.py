@@ -82,6 +82,18 @@ _chat_gpt_prices = {
         'prompt': 0.0015,
         'completion': 0.002,
     },
+    'gpt-3.5-turbo-instruct': {
+        'prompt': 0.0015,
+        'completion': 0.002,
+    },
+    'gpt-35-turbo-instruct': {
+        'prompt': 0.0015,
+        'completion': 0.002,
+    },
+    'gpt-3-turbo-instruct': {
+        'prompt': 0.0015,
+        'completion': 0.002,
+    },
 
 }
 

@@ -67,6 +67,7 @@ class BaseRoute(BaseModel):
 
     settings: Optional[Union[OpenAISettings, AzureOpenAISettings]] = Field(default_factory = get_settings)
     is_azure: Optional[bool] = None
+    azure_model_mapping: Optional[Dict[str, str]] = None
 
     @lazyproperty
     def api_resource(self):

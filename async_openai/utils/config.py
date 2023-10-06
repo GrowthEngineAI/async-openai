@@ -385,6 +385,8 @@ class BaseOpenAISettings(BaseSettings):
         
         if api_version is None: 
             self.api_version = self.api_type.get_version(api_version)
+        else:
+            self.api_version = api_version
         if organization is not None: self.organization = organization
         if proxies is not None: self.proxies = proxies
         if timeout is not None: self.timeout = timeout

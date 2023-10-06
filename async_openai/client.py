@@ -58,6 +58,7 @@ class OpenAIClient:
     settings: Optional[OpenAISettings] = None
     name: Optional[str] = None
     is_azure: Optional[bool] = None
+    azure_model_mapping: Optional[Dict[str, str]] = None
 
     auth: Optional[OpenAIAuth] = None
     _client: Optional[aiohttpx.Client] = None
@@ -118,6 +119,7 @@ class OpenAIClient:
         settings: Optional[OpenAISettings] = None,
         name: Optional[str] = None,
         is_azure: Optional[bool] = None,
+        azure_model_mapping: Optional[Dict[str, str]] = None,
         auth: Optional[OpenAIAuth] = None,
         **kwargs
     ):  # sourcery skip: low-code-quality
@@ -136,10 +138,6 @@ class OpenAIClient:
             self.api_type = api_type
         elif self.api_type is None:
             self.api_type = self.settings.api_type
-        if api_version is not None:
-            self.api_version = api_version
-        elif self.api_version is None:
-            self.api_version = self.settings.api_version
         if organization is not None:
             self.organization = organization
         elif self.organization is None:
@@ -214,10 +212,17 @@ class OpenAIClient:
             self.is_azure = is_azure
         elif self.is_azure is None:
             self.is_azure = isinstance(self.settings, AzureOpenAISettings)
+        if azure_model_mapping is not None:
+            self.azure_model_mapping = azure_model_mapping
         if name is not None:
             self.name = name
         elif self.name is None:
             self.name = 'default'
+        if api_version is not None:
+            self.api_version = api_version
+        elif self.api_version is None:
+            self.api_version = self.settings.api_version
+        
         
         if auth is not None:
             self.auth = auth
@@ -264,6 +269,7 @@ class OpenAIClient:
             max_retries = self.max_retries,
             settings = self.settings,
             is_azure = self.is_azure,
+            azure_model_mapping = self.azure_model_mapping,
             disable_retries = self.disable_retries,
             retry_function = self.retry_function,
             **kwargs

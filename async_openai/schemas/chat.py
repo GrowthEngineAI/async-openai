@@ -1,5 +1,7 @@
 import json
 import enum
+import time
+import asyncio
 import aiohttpx
 import contextlib
 from pydantic import root_validator, Field, BaseModel
@@ -10,8 +12,8 @@ from async_openai.types.options import OpenAIModel, get_consumption_cost
 from async_openai.types.resources import BaseResource, Usage
 from async_openai.types.responses import BaseResponse
 from async_openai.types.routes import BaseRoute
+from async_openai.types.errors import RateLimitError, APIError, MaxRetriesExceeded
 from async_openai.utils import logger, get_max_chat_tokens, get_chat_tokens_count, parse_stream, aparse_stream
-
 
 
 __all__ = [
@@ -25,6 +27,22 @@ __all__ = [
 class MessageKind(str, enum.Enum):
     CONTENT = 'content'
     ROLE = 'role'
+    FUNCTION_CALL = 'function_call'
+
+    @classmethod
+    def from_choice(cls, choice: Dict[str, Any]) -> 'MessageKind':
+        """
+        Returns the message kind from the choice
+        """
+        if 'role' in choice['delta']:
+            return cls.ROLE
+        elif 'content' in choice['delta']:
+            return cls.CONTENT
+        elif 'function_call' in choice['delta']:
+            return cls.FUNCTION_CALL
+        raise ValueError(f'Invalid choice: {choice}')
+
+
 
 class StreamedChatMessage(BaseResource):
     kind: MessageKind
@@ -353,10 +371,12 @@ class ChatResponse(BaseResponse):
         """
         Parses a single stream item
         """
+        # logger.info(f'Item: {item}')
+        if not item['choices']: return None
         choice = item['choices'][0]
         if choice['finish_reason'] == 'stop':
             return None
-        kind = MessageKind.ROLE if 'role' in choice['delta'] else MessageKind.CONTENT
+        kind = MessageKind.from_choice(choice)
         return StreamedChatMessage(
             kind = kind,
             value = choice['delta'].get(kind.value, '')
@@ -386,12 +406,23 @@ class ChatResponse(BaseResponse):
                                 'content': choice['delta'].get('content', ''),
                             }
                         }
+                        if 'function_call' in choice['delta']:
+                            results[n]['message']['function_call'] = choice['delta']['function_call']
+                            self.usage.completion_tokens += 4
+                        
                         # every message follows <im_start>{role/name}\n{content}<im_end>\n
                         self.usage.completion_tokens += 4
 
                     elif choice['finish_reason'] != 'stop':
                         for k,v in choice['delta'].items():
-                            if v: results[n]['message'][k] += v
+                            if k == 'function_call' and v:
+                                for fck, fcv in v.items():
+                                    if not results[n]['message'][k].get(fck):
+                                        results[n]['message'][k][fck] = fcv
+                                    else:
+                                        results[n]['message'][k][fck] += fcv
+
+                            elif v: results[n]['message'][k] += v
                             self.usage.completion_tokens += 1
 
                     else:
@@ -446,12 +477,22 @@ class ChatResponse(BaseResponse):
                                 'content': choice['delta'].get('content', ''),
                             }
                         }
+                        if 'function_call' in choice['delta']:
+                            results[n]['message']['function_call'] = choice['delta']['function_call']
+                            self.usage.completion_tokens += 4
+                        
                         # every message follows <im_start>{role/name}\n{content}<im_end>\n
                         self.usage.completion_tokens += 4
 
                     elif choice['finish_reason'] != 'stop':
                         for k,v in choice['delta'].items():
-                            if v: results[n]['message'][k] += v
+                            if k == 'function_call' and v:
+                                for fck, fcv in v.items():
+                                    if not results[n]['message'][k].get(fck):
+                                        results[n]['message'][k][fck] = fcv
+                                    else:
+                                        results[n]['message'][k][fck] += fcv
+                            elif v: results[n]['message'][k] += v
                             self.usage.completion_tokens += 1
 
                     else:
@@ -465,7 +506,7 @@ class ChatResponse(BaseResponse):
 
 
             except Exception as e:
-                logger.error(f'Error: {line}: {e}')
+                logger.trace(f'Error: {line}', e)
         self._stream_consumed = True
         for remaining_result in results.values():
             if streaming:
@@ -511,6 +552,8 @@ class ChatRoute(BaseRoute):
         self, 
         input_object: Optional[ChatObject] = None,
         parse_stream: Optional[bool] = True,
+        auto_retry: Optional[bool] = False,
+        auto_retry_limit: Optional[int] = None,
         **kwargs
     ) -> ChatResponse:
         """
@@ -599,14 +642,92 @@ class ChatRoute(BaseRoute):
         monitor and detect abuse.
         Default: `None`
 
+        :functions (optional): A list of dictionaries representing the functions to call
+        
+        :function_call (optional): The name of the function to call. Default: `auto` if functions are provided
+
+        :auto_retry (optional): Whether to automatically retry the request if it fails due to a rate limit error.
+
+        :auto_retry_limit (optional): The maximum number of times to retry the request if it fails due to a rate limit error.
+
         Returns: `ChatResponse`
         """
-        return super().create(input_object=input_object, parse_stream = parse_stream, **kwargs)
+        if self.is_azure and self.azure_model_mapping and kwargs.get('model') and kwargs['model'] in self.azure_model_mapping:
+            kwargs['model'] = self.azure_model_mapping[kwargs['model']]
+
+        current_attempt = kwargs.pop('_current_attempt', 0)
+        if not auto_retry:
+            return super().create(input_object=input_object, parse_stream = parse_stream, **kwargs)
+        
+        # Handle Auto Retry Logic
+        if not auto_retry_limit: auto_retry_limit = self.settings.max_retries
+        try:
+            return super().create(input_object = input_object, parse_stream = parse_stream, **kwargs)
+        except RateLimitError as e:
+            if current_attempt >= auto_retry_limit:
+                raise MaxRetriesExceeded(attempts=current_attempt, base_exception=e) from e
+            sleep_interval = 15.0
+            with contextlib.suppress(Exception):
+                if 'Please retry after' in str(e):
+                    sleep_interval = (
+                        float(
+                            str(e)
+                            .split("Please retry after")[1]
+                            .split("second")[0]
+                            .strip()
+                        )
+                        * 1.5
+                    )
+            logger.warning(f'[{current_attempt}/{auto_retry_limit}] Rate Limit Error. Sleeping for {sleep_interval} seconds')
+            time.sleep(sleep_interval)
+            current_attempt += 1
+            return self.create(
+                input_object = input_object,
+                parse_stream = parse_stream,
+                auto_retry = auto_retry,
+                auto_retry_limit = auto_retry_limit,
+                _current_attempt = current_attempt,
+                **kwargs
+            )
+        except APIError as e:
+            if current_attempt >= auto_retry_limit:
+                raise MaxRetriesExceeded(attempts=current_attempt, base_exception=e) from e
+            logger.warning(f'[{current_attempt}/{auto_retry_limit}] API Error: {e}. Sleeping for 10 seconds')
+            time.sleep(10.0)
+            current_attempt += 1
+            return self.create(
+                input_object = input_object,
+                parse_stream = parse_stream,
+                auto_retry = auto_retry,
+                auto_retry_limit = auto_retry_limit,
+                _current_attempt = current_attempt,
+                **kwargs
+            )
+
+        except Exception as e:
+            if current_attempt >= auto_retry_limit:
+                raise MaxRetriesExceeded(attempts=current_attempt, base_exception=e) from e
+            logger.warning(f'[{current_attempt}/{auto_retry_limit}] Unknown Error: {e}. Sleeping for 10 seconds')
+            time.sleep(10.0)
+            current_attempt += 1
+            return self.create(
+                input_object = input_object,
+                parse_stream = parse_stream,
+                auto_retry = auto_retry,
+                auto_retry_limit = auto_retry_limit,
+                _current_attempt = current_attempt,
+                **kwargs
+            )
+
+
+
 
     async def async_create(
         self, 
         input_object: Optional[ChatObject] = None,
         parse_stream: Optional[bool] = True,
+        auto_retry: Optional[bool] = False,
+        auto_retry_limit: Optional[int] = None,
         **kwargs
     ) -> ChatResponse:
         """
@@ -693,8 +814,84 @@ class ChatRoute(BaseRoute):
 
         :user (optional): A unique identifier representing your end-user, which can help OpenAI to 
         monitor and detect abuse.
+
+        :functions (optional): A list of dictionaries representing the functions to call
+        
+        :function_call (optional): The name of the function to call. Default: `auto` if functions are provided
+
+        :auto_retry (optional): Whether to automatically retry the request if it fails due to a rate limit error.
+
+        :auto_retry_limit (optional): The maximum number of times to retry the request if it fails due to a rate limit error.
+
         Default: `None`
 
-        Returns: `CompletionResult`
+        Returns: `ChatResponse`
         """
-        return await super().async_create(input_object = input_object, parse_stream = parse_stream, **kwargs)
+        if self.is_azure and self.azure_model_mapping and kwargs.get('model') and kwargs['model'] in self.azure_model_mapping:
+            kwargs['model'] = self.azure_model_mapping[kwargs['model']]
+        current_attempt = kwargs.pop('_current_attempt', 0)
+        if not auto_retry:
+            return await super().async_create(input_object = input_object, parse_stream = parse_stream, **kwargs)
+
+        # Handle Auto Retry Logic
+        if not auto_retry_limit: auto_retry_limit = self.settings.max_retries
+        try:
+            return await super().async_create(input_object = input_object, parse_stream = parse_stream, **kwargs)
+        except RateLimitError as e:
+            if current_attempt >= auto_retry_limit:
+                raise MaxRetriesExceeded(attempts=current_attempt, base_exception=e) from e
+            sleep_interval = 15.0
+            with contextlib.suppress(Exception):
+                if 'Please retry after' in str(e):
+                    sleep_interval = (
+                        float(
+                            str(e)
+                            .split("Please retry after")[1]
+                            .split("second")[0]
+                            .strip()
+                        )
+                        * 1.5
+                    )
+            logger.warning(f'[{current_attempt}/{auto_retry_limit}] Rate Limit Error. Sleeping for {sleep_interval} seconds')
+            await asyncio.sleep(sleep_interval)
+            current_attempt += 1
+            return await self.async_create(
+                input_object = input_object,
+                parse_stream = parse_stream,
+                auto_retry = auto_retry,
+                auto_retry_limit = auto_retry_limit,
+                _current_attempt = current_attempt,
+                **kwargs
+            )
+        except APIError as e:
+            if current_attempt >= auto_retry_limit:
+                raise MaxRetriesExceeded(attempts=current_attempt, base_exception=e) from e
+            logger.warning(f'[{current_attempt}/{auto_retry_limit}] API Error: {e}. Sleeping for 10 seconds')
+            await asyncio.sleep(10.0)
+            current_attempt += 1
+            return await self.async_create(
+                input_object = input_object,
+                parse_stream = parse_stream,
+                auto_retry = auto_retry,
+                auto_retry_limit = auto_retry_limit,
+                _current_attempt = current_attempt,
+                **kwargs
+            )
+
+        except Exception as e:
+            if current_attempt >= auto_retry_limit:
+                raise MaxRetriesExceeded(attempts=current_attempt, base_exception=e) from e
+            logger.warning(f'[{current_attempt}/{auto_retry_limit}] Unknown Error: {e}. Sleeping for 10 seconds')
+            await asyncio.sleep(10.0)
+            current_attempt += 1
+            return await self.async_create(
+                input_object = input_object,
+                parse_stream = parse_stream,
+                auto_retry = auto_retry,
+                auto_retry_limit = auto_retry_limit,
+                _current_attempt = current_attempt,
+                **kwargs
+            )
+
+
+    
