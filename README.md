@@ -13,7 +13,13 @@
 
     - [x] `Completions`: [Docs](https://beta.openai.com/docs/api-reference/completions)
 
+      - [x] Supports Streaming
+
     - [x] `Chat`: [Docs](https://beta.openai.com/docs/api-reference/chat)
+
+      - [x] Supports Streaming
+
+      - [x] Supports `Functions`
     
     - [x] `Edits`: [Docs](https://beta.openai.com/docs/api-reference/edits)
     
@@ -41,6 +47,9 @@
     - [x] Supports `Minio`: `minio://bucket/path/to/file.txt`
 
 - [x] Supports `limited` cost tracking for `Completions` and `Edits` requests (when stream is not enabled)
+
+- [x] Parallelization Safe with ThreadPools or any `asyncio` compatible event loop. Can handle 100s of requests per second. (If you don't run into rate limits)
+
 
 ---
  
