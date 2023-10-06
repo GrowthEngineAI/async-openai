@@ -72,7 +72,7 @@ import asyncio
 from async_openai import OpenAI, settings, CompletionResponse
 
 # Environment variables should pick up the defaults
-# however, you can also set them explicitly.
+# however, you can also set them explicitly. See below for more details.
 
 # `api_key` - Your OpenAI API key.                  Env: [`OPENAI_API_KEY`]
 # `url` - The URL of the OpenAI API.                Env: [`OPENAI_URL`]
@@ -127,6 +127,55 @@ result: CompletionResponse = asyncio.run(
 )
 
 ```
+
+### Configuration and Environment Variables
+
+The following environment variables can be used to configure the client.
+
+```
+
+OpenAI Configuration
+
+url: The OpenAI API URL                                     | Env: [`OPENAI_API_URL`]
+scheme: The OpenAI API Scheme                               | Env: [`OPENAI_API_SCHEME`]
+host: The OpenAI API Host                                   | Env: [`OPENAI_API_HOST`]
+port: The OpenAI API Port                                   | Env: [`OPENAI_API_PORT`]
+api_base: The OpenAI API Base                               | Env: [`OPENAI_API_BASE`]
+api_key: The OpenAI API Key                                 | Env: [`OPENAI_API_KEY`]
+api_path: The OpenAI API Path                               | Env: [`OPENAI_API_PATH`]
+api_type: The OpenAI API Type                               | Env: [`OPENAI_API_TYPE`]
+api_version: The OpenAI API Version                         | Env: [`OPENAI_API_VERSION`]
+api_key_path: The API Key Path                              | Env: [`OPENAI_API_KEY_PATH`]
+organization: Organization                                  | Env: [`OPENAI_ORGANIZATION`]
+proxies: The OpenAI Proxies                                 | Env: [`OPENAI_PROXIES`]
+timeout: Timeout in Seconds                                 | Env: [`OPENAI_TIMEOUT`]
+max_retries: The OpenAI Max Retries                         | Env: [`OPENAI_MAX_RETRIES`]
+ignore_errors: Ignore Errors                                | Env: [`OPENAI_IGNORE_ERRORS`]
+disable_retries: Disable Retries                            | Env: [`OPENAI_DISABLE_RETRIES`]
+max_connections: Max Connections                            | Env: [`OPENAI_MAX_CONNECTIONS`]
+max_keepalive_connections: Max Keepalive Connections        | Env: [`OPENAI_MAX_KEEPALIVE_CONNECTIONS`]
+keepalive_expiry: Keepalive Expiry                          | Env: [`OPENAI_KEEPALIVE_EXPIRY`]
+custom_headers: Custom Headers                              | Env: [`OPENAI_CUSTOM_HEADERS`]
+
+Azure Configuration
+
+azure_url: The OpenAI API URL                               | Env: [`AZURE_OPENAI_API_URL`]
+azure_scheme: The OpenAI API Scheme                         | Env: [`AZURE_OPENAI_API_SCHEME`]
+azure_host: The OpenAI API Host                             | Env: [`AZURE_OPENAI_API_HOST`]
+azure_port: The OpenAI API Port                             | Env: [`AZURE_OPENAI_API_PORT`]
+azure_api_key: The OpenAI API Key                           | Env: [`AZURE_OPENAI_API_KEY`]
+azure_api_base: The OpenAI API Base                         | Env: [`AZURE_OPENAI_API_BASE`]
+azure_api_path: The OpenAI API Path                         | Env: [`AZURE_OPENAI_API_PATH`]
+azure_api_type: The OpenAI API Type                         | Env: [`AZURE_OPENAI_API_TYPE`]
+azure_api_version: The OpenAI API Version                   | Env: [`AZURE_OPENAI_API_VERSION`]
+azure_api_key_path: The API Key Path                        | Env: [`AZURE_OPENAI_API_KEY_PATH`]
+azure_organization: Organization                            | Env: [`AZURE_OPENAI_ORGANIZATION`]
+azure_proxies: The OpenAI Proxies                           | Env: [`AZURE_OPENAI_PROXIES`]
+azure_timeout: Timeout in Seconds                           | Env: [`AZURE_OPENAI_TIMEOUT`]
+azure_max_retries: The OpenAI Max Retries                   | Env: [`AZURE_OPENAI_MAX_RETRIES`]
+
+```
+
 
 ### Initialize Clients Manually, and working with multiple clients
 
