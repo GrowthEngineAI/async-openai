@@ -1,5 +1,13 @@
 # Changelogs
 
+
+#### v0.0.36 (2023-10-11)
+
+**Additions**
+
+- Added auto-parsing of `pydantic` objects in `function_call` parameters and return the same object schema in `chat_response.function_result_objects`.
+
+
 #### v0.0.35 (2023-10-06)
 
 **Additions**

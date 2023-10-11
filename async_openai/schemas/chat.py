@@ -5,7 +5,7 @@ import asyncio
 import aiohttpx
 import contextlib
 from pydantic import root_validator, Field, BaseModel
-from typing import Optional, Type, Any, Union, List, Dict, Iterator, AsyncIterator, Generator, AsyncGenerator, TYPE_CHECKING
+from typing import Optional, Type, Any, Union, List, Dict, Iterator, TypeVar, AsyncIterator, Generator, AsyncGenerator, TYPE_CHECKING
 from lazyops.types import validator, lazyproperty
 
 from async_openai.types.options import OpenAIModel, get_consumption_cost
@@ -19,10 +19,13 @@ from async_openai.utils import logger, get_max_chat_tokens, get_chat_tokens_coun
 __all__ = [
     'ChatMessage',
     'ChatChoice',
+    'Function',
     'ChatObject',
     'CompletionResponse',
     'CompletionRoute',
 ]
+
+SchemaType = TypeVar("SchemaType", bound=Type[BaseModel])
 
 class MessageKind(str, enum.Enum):
     CONTENT = 'content'
@@ -111,19 +114,31 @@ class Function(BaseResource):
     """
     # Must be a-z, A-Z, 0-9, or contain underscores and dashes
     name: str = Field(..., max_length = 64, regex = r'^[a-zA-Z0-9_]+$')
-    parameters: Union[Dict[str, Any], BaseModel, str]
+    parameters: Union[Dict[str, Any], SchemaType, str]
     description: Optional[str] = None
+    source_object: Optional[SchemaType] = Field(default = None, exclude = True)
 
-    @validator('parameters', pre = True, always = True)
-    def validate_parameters(cls, v) -> Dict[str, Any]:
+    @root_validator(pre = True)
+    def validate_parameters(cls, values: Dict[str, Any]) -> Dict[str, Any]:
         """
         Validate the parameters
         """
-        if isinstance(v, dict):
-            return v
-        elif issubclass(v, BaseModel):
-            return v.schema()
-        raise ValueError(f'Parameters must be a dict or pydantic BaseModel. Provided: {type(v)}')
+        if params := values.get('parameters'):
+            if isinstance(params, dict):
+                pass
+            elif issubclass(params, BaseModel):
+                values['parameters'] = params.schema()
+                values['source_object'] = params
+            elif isinstance(params, str):
+                try:
+                    values['parameters'] = json.loads(params)
+                except Exception as e:
+                    raise ValueError(f'Invalid JSON: {params}, {e}. Must be a dict or pydantic BaseModel.') from e
+            else:
+                raise ValueError(f'Parameters must be a dict or pydantic BaseModel. Provided: {type(params)}')
+        return values
+
+
 
 
 class ChatObject(BaseResource):
@@ -269,6 +284,33 @@ class ChatResponse(BaseResponse):
         Returns the function results for the completions
         """
         return [msg.function_call for msg in self.messages if msg.function_call]
+    
+    @lazyproperty
+    def function_result_objects(self) -> List[Union[SchemaType, Dict[str, Any]]]:
+        """
+        Returns the function result objects for the completions
+        """
+        results = []
+        source_function: Function = self._input_object.functions[0] if self._input_object.function_call == "auto" else (
+            [
+                f for f in self._input_object.functions if f.name == self._input_object.function_call
+            ]
+        )[0]
+
+        for func_result in self.function_results:
+            if source_function.source_object:
+                try:
+                    results.append(source_function.source_object(**func_result.arguments))
+                    continue
+                except Exception as e:
+                    logger.error(e)
+            try:
+                results.append(json.loads(func_result.arguments))
+            except Exception as e:
+                logger.error(e)
+                results.append(func_result.arguments)
+
+        return results
 
     @lazyproperty
     def input_text(self) -> str:
