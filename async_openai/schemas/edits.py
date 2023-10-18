@@ -54,7 +54,7 @@ class EditResponse(BaseResponse):
         """
         if self.choices:
             return ''.join([choice.text for choice in self.choices])
-        return self._response.text
+        return self.response.text
 
 
 class EditRoute(BaseRoute):

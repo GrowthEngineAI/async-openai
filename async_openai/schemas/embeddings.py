@@ -52,7 +52,7 @@ class EmbeddingObject(BaseResource):
 class EmbeddingResponse(BaseResponse):
     data: Optional[List[EmbeddingData]]
     data_model: Optional[Type[BaseResource]] = EmbeddingData
-    _input_object: Optional[EmbeddingObject] = None
+    input_object: Optional[EmbeddingObject] = None
 
     @lazyproperty
     def embeddings(self) -> List[List[float]]:
@@ -70,7 +70,7 @@ class EmbeddingResponse(BaseResponse):
         """
         Returns the model for the completions
         """
-        return self.headers.get('openai-model', self._input_object.model.value)
+        return self.headers.get('openai-model', self.input_object.model.value)
 
     @lazyproperty
     def consumption(self) -> int:

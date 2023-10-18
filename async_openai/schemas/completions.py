@@ -4,9 +4,9 @@ import time
 import asyncio
 import aiohttpx
 import contextlib
-from pydantic import root_validator, Field
 from typing import Optional, Type, Any, Union, List, Dict, Iterator, AsyncIterator, Generator, AsyncGenerator, TYPE_CHECKING
 from lazyops.types import validator, lazyproperty
+from lazyops.types.models import root_validator, pre_root_validator, Field
 
 from async_openai.types.options import OpenAIModel, get_consumption_cost
 from async_openai.types.resources import BaseResource, Usage
@@ -36,14 +36,9 @@ class StreamedCompletionChoice(BaseResource):
 class CompletionChoice(BaseResource):
     text: str
     index: int
-    logprobs: Optional[Any]
-    finish_reason: Optional[str]
+    logprobs: Optional[Any] = None
+    finish_reason: Optional[str] = None
 
-    def __getitem__(self, key: str) -> Any:
-        """
-        Mimic dict
-        """
-        return getattr(self, key)
 
 
 class CompletionObject(BaseResource):
@@ -130,12 +125,12 @@ class CompletionObject(BaseResource):
             data['model'] = data['model'].value
         return data
     
-    @root_validator()
+    @root_validator(pre = True)
     def validate_obj(cls, values: Dict[str, Any]) -> Dict[str, Any]:
         """
         Validate the object
         """
-        if (values['validate_max_tokens'] and values.get('max_tokens')) \
+        if (values.get('validate_max_tokens') and values.get('max_tokens')) \
             or (values.get('max_tokens') is not None and values['max_tokens'] <= 0):
             values['max_tokens'] = get_max_tokens(
                 text = values['prompt'],
@@ -148,9 +143,9 @@ class CompletionObject(BaseResource):
     
 
 class CompletionResponse(BaseResponse):
-    choices: Optional[List[CompletionChoice]]
+    choices: Optional[List[CompletionChoice]] = None
     choice_model: Optional[Type[BaseResource]] = CompletionChoice
-    _input_object: Optional[CompletionObject] = None
+    input_object: Optional[CompletionObject] = None
 
     @lazyproperty
     def text(self) -> str:
@@ -159,7 +154,7 @@ class CompletionResponse(BaseResponse):
         """
         if self.choices_results:
             return ''.join([choice.text for choice in self.choices])
-        return self._response.text
+        return self.response.text
     
     @lazyproperty
     def openai_model(self):
@@ -181,9 +176,9 @@ class CompletionResponse(BaseResponse):
         Validate usage
         """
         if self.usage and self.usage.total_tokens: return
-        if self._response.status_code == 200:
+        if self.response.status_code == 200:
             self.usage = Usage(
-                prompt_tokens = get_token_count(self._input_object.prompt),
+                prompt_tokens = get_token_count(self.input_object.prompt),
                 completion_tokens = get_token_count(self.text),
             )
             self.usage.total_tokens = self.usage.prompt_tokens + self.usage.completion_tokens
@@ -211,12 +206,6 @@ class CompletionResponse(BaseResponse):
         if data.get('completion_model'):
             data['completion_model'] = data['completion_model'].dict()
         return data
-
-    def __getitem__(self, key: str) -> Any:
-        """
-        Mimic dict
-        """
-        return getattr(self, key)
 
     def parse_stream_item(self, item: Union[Dict, Any], **kwargs) -> Optional[StreamedCompletionChoice]:
         """

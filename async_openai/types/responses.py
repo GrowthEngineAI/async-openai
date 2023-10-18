@@ -4,6 +4,7 @@ import aiohttpx
 import contextlib
 
 from lazyops.types import BaseModel, lazyproperty
+from lazyops.types.models import get_pyd_field_names, Field, PYD_VERSION
 from typing import Dict, Optional, Any, List, Type, Union, Generator, AsyncGenerator, cast
 from async_openai.types.errors import error_handler
 from async_openai.types.resources import BaseResource, FileObject, Usage
@@ -18,6 +19,10 @@ __all__ = [
 Response Class
 """
 
+
+if PYD_VERSION == 2:
+    from pydantic import PrivateAttr
+
 class BaseResponse(BaseResource):
     
     """
@@ -25,14 +30,14 @@ class BaseResponse(BaseResource):
     inherit from
     """
 
-    id: Optional[str]
-    object: Optional[str]
-    created: Optional[datetime.datetime]
-    updated: Optional[datetime.datetime]
+    id: Optional[str] = None
+    object: Optional[str] = None
+    created: Optional[datetime.datetime] = None
+    updated: Optional[datetime.datetime] = None
     
-    choices: Optional[List[Type[BaseResource]]]
-    data: Optional[Union[Type[BaseResource], List[BaseResource]]] # Used for single retrieval if not in list.
-    events: Optional[List[BaseResource]]
+    choices: Optional[List[Type[BaseResource]]] = None
+    data: Optional[Union[Type[BaseResource], List[BaseResource]]] = None # Used for single retrieval if not in list.
+    events: Optional[List[BaseResource]] = None
 
     data_model: Optional[Type[BaseResource]] = None
     choice_model: Optional[Type[BaseResource]] = None
@@ -42,13 +47,18 @@ class BaseResponse(BaseResource):
     usage: Optional[Usage] = None
     model: Optional[str] = None
 
-    _input_object: Optional[Type[BaseResource]] = None
-    _response: Optional[aiohttpx.Response] = None
+    input_object: Optional[BaseResource] = Field(exclude = True)
+    response: Optional[aiohttpx.Response] = Field(exclude = True)
+    response_data: Optional[Union[Dict, List, Any]] = Field(default = None, exclude = True)
 
-    _has_metadata: Optional[bool] = False
-    _stream_consumed: Optional[bool] = False
-    _stream_chunks: Optional[List[Any]] = None
-    _response_data: Optional[Union[Dict, List, Any]] = None
+    if PYD_VERSION == 2:
+        _has_metadata: Optional[bool] = PrivateAttr(default = False)
+        _stream_consumed: Optional[bool] = PrivateAttr(default = False)
+        _stream_chunks: Optional[List[Any]] = PrivateAttr(default = None)
+    else:
+        _has_metadata: Optional[bool] = False
+        _stream_consumed: Optional[bool] = False
+        _stream_chunks: Optional[List[Any]] = None
 
 
     @property
@@ -87,9 +97,9 @@ class BaseResponse(BaseResource):
     def excluded_params(self) -> List[str]:
         return [
             "data_model", "choice_model", "event_model", 
-            "excluded_params", "input_object", "resource_model", "input_model",
-            "_stream_consumed", "_stream_chunks", "_response_data",
-            # "_response", "_has_metadata", "metadata_fields",
+            "excluded_params", "resource_model", "input_model", "metadata_fields",
+            "_stream_consumed", "_stream_chunks", "_has_metadata", 
+            "response", "response_data", "input_object",
         ]
     
     def dict(self, *args, exclude: Any = None, **kwargs):
@@ -106,10 +116,13 @@ class BaseResponse(BaseResource):
     """
     @lazyproperty
     def metadata_fields(self) -> List[str]:
+        """
+        Returns the metadata fields
+        """
         return [
-            field.name for field in self.__fields__.values() if \
-                field.name not in [
-                    "_input_object", "_response", 
+            name for name in get_pyd_field_names(self) if \
+                name not in [
+                    "response", "response_data", "input_object",
                     "data_model",  "choice_model", "event_model",
                     "data", "choices", "events"
                 ]
@@ -129,7 +142,7 @@ class BaseResponse(BaseResource):
         """
         Returns the response headers
         """
-        return self._response.headers if self._response else {}
+        return self.response.headers if self.response else {}
     
     @property
     def response_json(self) -> Dict:
@@ -137,8 +150,8 @@ class BaseResponse(BaseResource):
         Returns the response json
         """
         with contextlib.suppress(Exception):
-            return self._response.json() if self._response else {}
-        return BaseResource.handle_json(self._response.content) if self._response else {}
+            return self.response.json() if self.response else {}
+        return BaseResource.handle_json(self.response.content) if self.response else {}
 
     @property
     def has_stream(self):
@@ -231,9 +244,9 @@ class BaseResponse(BaseResource):
         native access to the response data
         """
         if isinstance(key, str):
-            if not self._response_data:
-                self._response_data = self._response.json()
-            return self._response_data.get(key)
+            if not self.response_data:
+                self.response_data = self.response.json()
+            return self.response_data.get(key)
         return self.resource_data[key] if self.resource_data else None
     
     """
@@ -283,7 +296,7 @@ class BaseResponse(BaseResource):
             self.data.extend(data)
         
         elif not self.data:
-            self.data = self.data_model.parse_obj(item) if self.data_model else item
+            self.data_model.parse_obj(item) if self.data_model else item
 
     
     def handle_choice_item(
@@ -349,11 +362,11 @@ class BaseResponse(BaseResource):
         if not self.has_stream: return self.handle_resource_item(item = self.response_json, **kwargs)
         if not parse_stream: return
         for item in self.handle_stream(
-            response = self._response
+            response = self.response
         ):
             if "error" in item:
                 raise error_handler(
-                    response = self._response,
+                    response = self.response,
                     data = item,
                 )
             
@@ -372,10 +385,10 @@ class BaseResponse(BaseResource):
         """
         if not self.has_stream: return self.handle_resource_item(item = self.response_json, **kwargs)
         if not parse_stream: return
-        async for item in self.ahandle_stream(response=self._response):
+        async for item in self.ahandle_stream(response=self.response):
             if "error" in item:
                 raise error_handler(
-                    response = self._response,
+                    response = self.response,
                     data = item,
                 )
             
@@ -387,14 +400,14 @@ class BaseResponse(BaseResource):
     def prepare_response(
         cls, 
         response: aiohttpx.Response,
-        input_object: Type['BaseResource'],
+        input_object: 'BaseResource',
         parse_stream: Optional[bool] = True,
         **kwargs
-    ) -> Type['BaseResponse']:
+    ) -> 'BaseResource':
         """
         Handles the response and returns the appropriate object
         """
-        resource = cls(_response = response, _input_object = input_object)
+        resource = cls(response = response, input_object = input_object)
         resource.construct_resource(parse_stream = parse_stream, **kwargs)
         return resource
     
@@ -402,14 +415,14 @@ class BaseResponse(BaseResource):
     async def aprepare_response(
         cls, 
         response: aiohttpx.Response,
-        input_object: Type['BaseResource'],
+        input_object: 'BaseResource',
         parse_stream: Optional[bool] = True,
         **kwargs
-    ) -> Type['BaseResponse']:
+    ) -> 'BaseResource':
         """
         Handles the response and returns the appropriate object
         """
-        resource = cls(_response = response, _input_object = input_object)
+        resource = cls(response = response, input_object = input_object)
         await resource.aconstruct_resource(parse_stream = parse_stream, **kwargs)
         return resource
 
@@ -456,9 +469,9 @@ class BaseResponse(BaseResource):
             yield from self._stream_chunks
             return
         self._stream_chunks = []
-        for item in self.handle_stream(response = self._response, streaming = True):
+        for item in self.handle_stream(response = self.response, streaming = True):
             if "error" in item:
-                raise error_handler(response = self._response, data = item)
+                raise error_handler(response = self.response, data = item)
             # self.handle_resource_item(item = item, **kwargs)
             stream_item = self.parse_stream_item(item = item, **kwargs)
             if stream_item is not None:
@@ -475,9 +488,9 @@ class BaseResponse(BaseResource):
                 yield stream_item
             return
         self._stream_chunks = []
-        async for item in self.ahandle_stream(response = self._response, streaming = True):
+        async for item in self.ahandle_stream(response = self.response, streaming = True):
             if "error" in item:
-                raise error_handler(response = self._response, data = item)
+                raise error_handler(response = self.response, data = item)
             # self.handle_resource_item(item = item, **kwargs)
             stream_item = self.parse_stream_item(item = item, **kwargs)
             if stream_item is not None:
@@ -486,31 +499,3 @@ class BaseResponse(BaseResource):
         self._stream_consumed = True
         
 
-
-    # @classmethod
-    # def prepare_response_stream(
-    #     cls, 
-    #     response: aiohttpx.Response,
-    #     input_object: Type['BaseResource'],
-    #     **kwargs
-    # ) -> Type['BaseResponse']:
-    #     """
-    #     Handles the response and returns the appropriate object
-    #     """
-    #     resource = cls(_response = response, _input_object = input_object)
-    #     resource.construct_resource(**kwargs)
-    #     return resource
-    
-    # @classmethod
-    # async def aprepare_response_stream(
-    #     cls, 
-    #     response: aiohttpx.Response,
-    #     input_object: Type['BaseResource'],
-    #     **kwargs
-    # ) -> Type['BaseResponse']:
-    #     """
-    #     Handles the response and returns the appropriate object
-    #     """
-    #     resource = cls(_response = response, _input_object = input_object)
-    #     await resource.aconstruct_resource(**kwargs)
-    #     return resource

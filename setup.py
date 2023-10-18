@@ -16,6 +16,9 @@ requirements = [
     'file-io',
     'backoff',
     'tiktoken',
+    'lazyops >= 0.2.60', # Pydantic Support
+    'pydantic',
+    'pydantic-settings',
 ]
 
 if sys.version_info.minor < 8:

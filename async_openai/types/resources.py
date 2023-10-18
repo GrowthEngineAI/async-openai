@@ -1,8 +1,10 @@
 import json
 import aiohttpx
 import datetime
+from pydantic import ConfigDict
 from pydantic.types import ByteSize
 from lazyops.types import BaseModel, validator, lazyproperty
+from lazyops.types.models import get_pyd_field_names, pyd_parse_obj, get_pyd_dict, _BaseModel
 from lazyops.utils import ObjectDecoder
 from async_openai.utils.logs import logger
 from async_openai.utils.helpers import aparse_stream, parse_stream
@@ -39,9 +41,9 @@ VALID_SEND_KWARGS = [
 
 
 class Usage(BaseModel):
-    prompt_tokens: Optional[int]
-    completion_tokens: Optional[int]
-    total_tokens: Optional[int]
+    prompt_tokens: Optional[int] = 0
+    completion_tokens: Optional[int] = 0
+    total_tokens: Optional[int] = 0
 
     @lazyproperty
     def consumption(self):
@@ -71,6 +73,13 @@ class BaseResource(BaseModel):
     inherit from
     """
 
+    # model_config = ConfigDict(extra = 'allow', arbitrary_types_allowed = True)
+    # def get(self, name, default: Any = None):
+    #     """
+    #     Get an attribute from the model
+    #     """
+    #     return getattr(self, name, default)
+
     if TYPE_CHECKING:
         id: Optional[str]
         file_id: Optional[str]
@@ -78,6 +87,7 @@ class BaseResource(BaseModel):
         model_id: Optional[str]
         completion_id: Optional[str]
         openai_id: Optional[str]
+
 
     @lazyproperty
     def resource_id(self):
@@ -96,16 +106,31 @@ class BaseResource(BaseModel):
             return self.completion_id
         return self.openai_id if hasattr(self, 'openai_id') else None
     
+    @classmethod
+    def parse_obj(
+        cls,
+        obj: Any,
+        strict: Optional[bool] = False,
+        from_attributes: Optional[bool] = True,
+        **kwargs
+    ) -> 'BaseResource':
+        """
+        Parses an object into the resource
+        """
+        #return cls(**obj)
+        # logger.info(f"Obj: {cls}: {obj}")
+        return pyd_parse_obj(cls, obj, strict = strict, from_attributes = from_attributes, **kwargs)
+    
     @staticmethod
     def create_resource(
         resource: Type['BaseResource'],
         **kwargs
-    ) -> Tuple[Type['BaseResource'], Dict]:
+    ) -> Tuple['BaseResource', Dict]:
         """
         Extracts the resource from the kwargs and returns the resource 
         and the remaining kwargs
         """
-        resource_fields = [field.name for field in resource.__fields__.values()]
+        resource_fields = get_pyd_field_names(resource)
         resource_kwargs = {k: v for k, v in kwargs.items() if k in resource_fields}
         return_kwargs = {k: v for k, v in kwargs.items() if k not in resource_fields}
         resource_obj = resource.parse_obj(resource_kwargs)
@@ -116,7 +141,6 @@ class BaseResource(BaseModel):
         """
         Creates many resources
         """
-        # logger.info(f"Creating: {data}")
         return [cls.parse_obj(d) for d in data]
     
     @staticmethod
@@ -161,6 +185,13 @@ class BaseResource(BaseModel):
                 logger.error(f'Error: {line}: {e}')
 
 
+    def __getitem__(self, key: str) -> Any:
+        """
+        Mimic dict
+        """
+        return getattr(self, key)
+
+
 class Permission(BaseResource):
     id: str
     object: str
@@ -194,6 +225,9 @@ class FileObject(BaseResource):
     
     @classmethod
     def create_many(cls, data: List[Dict]) -> List['FileObject']:
+        """
+        Creates many resources
+        """
         return [cls.parse_obj(d) for d in data]
 
 class EventObject(BaseResource):

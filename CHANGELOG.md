@@ -1,5 +1,14 @@
 # Changelogs
 
+#### v0.0.40 (2023-10-18)
+
+**Potentially Breaking Changes**
+
+This version introduces full compatability with `pydantic v1/v2` where previous versions would only work with `pydantic v1`. Auto-detection and handling of deprecated methods of `pydantic` models are handled by `lazyops`, and require `lazyops >= 0.2.60`.
+
+With `pydantic v2` support, there should be a slight performance increase in parsing `pydantic` objects, although the majority of the time is spent waiting for the API to respond.
+
+Additionally, support is added for handling the response like a `dict` object, so you can access the response like `response['choices']` rather than `response.choices`.
 
 #### v0.0.36 (2023-10-11)
 

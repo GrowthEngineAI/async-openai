@@ -128,6 +128,7 @@ class BaseRoute(BaseModel):
         if self.is_azure is None: self.is_azure = isinstance(self.settings, AzureOpenAISettings)
         if not self.is_azure: return self.api_resource
         data = data or {}
+        # logger.info(f"Data: {data}")
         base_endpoint = '/openai'
         deployment = data.get('deployment', data.get('model', kwargs.get('deployment', kwargs.get('model'))))
         if deployment is not None:
@@ -170,7 +171,7 @@ class BaseRoute(BaseModel):
                 resource = self.input_model,
                 **kwargs
             )
-        
+        # data = get_pyd_dict(input_object, exclude_none = self.exclude_null)
         data = input_object.dict(exclude_none = self.exclude_null)
         api_response = self._send(
             method = 'POST',
@@ -205,7 +206,7 @@ class BaseRoute(BaseModel):
                 resource = self.input_model,
                 **kwargs
             )
-
+        # data = get_pyd_dict(input_object, exclude_none = self.exclude_null)
         data = input_object.dict(exclude_none = self.exclude_null)
         api_response = await self._async_send(
             method = 'POST',
@@ -242,9 +243,8 @@ class BaseRoute(BaseModel):
 
         api_resource = f'{self.api_resource}/batch'
         data = json.dumps(
-            input_object.dict(
-                exclude_none = self.exclude_null
-            ), 
+            # get_pyd_dict(input_object, exclude_none = self.exclude_null),
+            input_object.dict(exclude_none = self.exclude_null), 
             cls = ObjectEncoder
         )
         api_response = self._send(
@@ -281,9 +281,8 @@ class BaseRoute(BaseModel):
 
         api_resource = f'{self.api_resource}/batch'
         data = json.dumps(
-            input_object.dict(
-                exclude_none = self.exclude_null
-            ), 
+            # get_pyd_dict(input_object, exclude_none = self.exclude_null),
+            input_object.dict(exclude_none = self.exclude_null), 
             cls = ObjectEncoder
         )
         api_response = await self._async_send(  
@@ -547,9 +546,7 @@ class BaseRoute(BaseModel):
             api_resource = f'{api_resource}/{resource_id}'
 
         data = json.dumps(
-            input_object.dict(
-                exclude_none = self.exclude_null
-            ), 
+            input_object.dict(exclude_none = self.exclude_null), 
             cls = ObjectEncoder
         )
         api_response = self._send(
@@ -591,9 +588,7 @@ class BaseRoute(BaseModel):
         if resource_id is not None:
             api_resource = f'{api_resource}/{resource_id}'
         data = json.dumps(
-            input_object.dict(
-                exclude_none = self.exclude_null
-            ), 
+            input_object.dict(exclude_none = self.exclude_null), 
             cls = ObjectEncoder
         )
         api_response = await self._async_send(

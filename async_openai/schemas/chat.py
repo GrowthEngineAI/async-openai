@@ -4,9 +4,9 @@ import time
 import asyncio
 import aiohttpx
 import contextlib
-from pydantic import root_validator, Field, BaseModel
 from typing import Optional, Type, Any, Union, List, Dict, Iterator, TypeVar, AsyncIterator, Generator, AsyncGenerator, TYPE_CHECKING
 from lazyops.types import validator, lazyproperty
+from lazyops.types.models import root_validator, pre_root_validator, Field, BaseModel, PYD_VERSION, get_pyd_schema
 
 from async_openai.types.options import OpenAIModel, get_consumption_cost
 from async_openai.types.resources import BaseResource, Usage
@@ -67,12 +67,6 @@ class FunctionCall(BaseResource):
                 return json.loads(v)
         return v
     
-    def __getitem__(self, key: str) -> Any:
-        """
-        Mimic dict
-        """
-        return getattr(self, key)
-
 # TODO Add support for name
 class ChatMessage(BaseResource):
     content: Optional[str] = None
@@ -83,24 +77,12 @@ class ChatMessage(BaseResource):
     def dict(self, *args, exclude_none: bool = True, **kwargs):
         return super().dict(*args, exclude_none = exclude_none, **kwargs)
 
-    def get(self, key: str, default: Any = None, **kwargs) -> Any:
-        """
-        Mimic dict
-        """
-        return getattr(self, key, default)
-
-    def __getitem__(self, key: str) -> Any:
-        """
-        Mimic dict
-        """
-        return getattr(self, key)
-
 
 class ChatChoice(BaseResource):
     message: ChatMessage
     index: int
-    logprobs: Optional[Any]
-    finish_reason: Optional[str]
+    logprobs: Optional[Any] = None
+    finish_reason: Optional[str] = None
 
     def __getitem__(self, key: str) -> Any:
         """
@@ -113,10 +95,13 @@ class Function(BaseResource):
     Represents a function
     """
     # Must be a-z, A-Z, 0-9, or contain underscores and dashes
-    name: str = Field(..., max_length = 64, regex = r'^[a-zA-Z0-9_]+$')
+    if PYD_VERSION == 2:
+        name: str = Field(..., max_length = 64, pattern = r'^[a-zA-Z0-9_]+$')
+    else:
+        name: str = Field(..., max_length = 64, regex = r'^[a-zA-Z0-9_]+$')
     parameters: Union[Dict[str, Any], SchemaType, str]
     description: Optional[str] = None
-    source_object: Optional[SchemaType] = Field(default = None, exclude = True)
+    source_object: Optional[Union[SchemaType, Any]] = Field(default = None, exclude = True)
 
     @root_validator(pre = True)
     def validate_parameters(cls, values: Dict[str, Any]) -> Dict[str, Any]:
@@ -126,8 +111,9 @@ class Function(BaseResource):
         if params := values.get('parameters'):
             if isinstance(params, dict):
                 pass
-            elif issubclass(params, BaseModel):
-                values['parameters'] = params.schema()
+            elif issubclass(params, BaseModel) or isinstance(params, type(BaseModel)):
+                values['parameters'] = get_pyd_schema(params)
+                # params.schema()
                 values['source_object'] = params
             elif isinstance(params, str):
                 try:
@@ -135,6 +121,7 @@ class Function(BaseResource):
                 except Exception as e:
                     raise ValueError(f'Invalid JSON: {params}, {e}. Must be a dict or pydantic BaseModel.') from e
             else:
+                # logger.warning(f'Invalid parameters: {params}. Must be a dict or pydantic BaseModel.')
                 raise ValueError(f'Parameters must be a dict or pydantic BaseModel. Provided: {type(params)}')
         return values
 
@@ -171,6 +158,7 @@ class ChatObject(BaseResource):
             v = [v]
         for i in v:
             if isinstance(i, dict):
+                # vals.append(pyd_parse_obj(ChatMessage, i, strict = False))
                 vals.append(ChatMessage.parse_obj(i))
             elif isinstance(i, str):
                 vals.append(ChatMessage(content = i))
@@ -236,6 +224,7 @@ class ChatObject(BaseResource):
         """
         Returns the dict representation of the response
         """
+        # data = get_pyd_dict(self, *args, exclude = exclude, **kwargs)
         data = super().dict(*args, exclude = exclude, **kwargs)
         # data['stream'] = False
         if data.get('model'):
@@ -244,14 +233,14 @@ class ChatObject(BaseResource):
         #     del data['max_tokens']
         return data
     
-    @root_validator()
+    @root_validator(pre = True)
     def validate_obj(cls, values: Dict[str, Any]) -> Dict[str, Any]:
         """
         Validate the object
         """
         # Auto validate max tokens
         # if values['validate_max_tokens'] or (values.get('max_tokens') is not None and values['max_tokens'] <= 0):
-        if (values['validate_max_tokens'] and values.get('max_tokens')) \
+        if (values.get('validate_max_tokens') and values.get('max_tokens')) \
             or (values.get('max_tokens') is not None and values['max_tokens'] <= 0):
             values['max_tokens'] = get_max_chat_tokens(
                 messages = values['messages'],
@@ -268,15 +257,18 @@ class ChatObject(BaseResource):
 
 
 class ChatResponse(BaseResponse):
-    choices: Optional[List[ChatChoice]]
+    choices: Optional[List[ChatChoice]] = None
     choice_model: Optional[Type[BaseResource]] = ChatChoice
-    _input_object: Optional[ChatObject] = None
+    input_object: Optional[ChatObject] = None
 
     @lazyproperty
     def messages(self) -> List[ChatMessage]:
+        """
+        Returns the messages for the completions
+        """
         if self.choices_results:
             return [choice.message for choice in self.choices]
-        return self._response.text
+        return self.response.text
     
     @lazyproperty
     def function_results(self) -> List[FunctionCall]:
@@ -291,9 +283,9 @@ class ChatResponse(BaseResponse):
         Returns the function result objects for the completions
         """
         results = []
-        source_function: Function = self._input_object.functions[0] if self._input_object.function_call == "auto" else (
+        source_function: Function = self.input_object.functions[0] if self.input_object.function_call == "auto" else (
             [
-                f for f in self._input_object.functions if f.name == self._input_object.function_call
+                f for f in self.input_object.functions if f.name == self.input_object.function_call
             ]
         )[0]
 
@@ -317,14 +309,14 @@ class ChatResponse(BaseResponse):
         """
         Returns the input text for the input prompt
         """
-        return '\n'.join([f'{msg.role}: {msg.content}' for msg in self._input_object.messages])
+        return '\n'.join([f'{msg.role}: {msg.content}' for msg in self.input_object.messages])
 
     @lazyproperty
     def input_messages(self) -> List[ChatMessage]:
         """
         Returns the input messages for the input prompt
         """
-        return self._input_object.messages
+        return self.input_object.messages
 
     @lazyproperty
     def text(self) -> str:
@@ -333,7 +325,7 @@ class ChatResponse(BaseResponse):
         """
         if self.choices_results:
             return '\n'.join([f'{msg.role}: {msg.content}' for msg in self.messages])
-        return self._response.text
+        return self.response.text
 
 
     @lazyproperty
@@ -343,14 +335,14 @@ class ChatResponse(BaseResponse):
         """
         if self.choices_results:
             return '\n'.join([msg.content for msg in self.messages])
-        return self._response.text
+        return self.response.text
 
     @lazyproperty
     def chat_model(self):
         """
         Returns the model for the completions
         """
-        return self._input_object.model or None
+        return self.input_object.model or None
         # return OpenAIModel(value=self.model, mode='chat') if self.model else None
     
     @lazyproperty
@@ -365,7 +357,7 @@ class ChatResponse(BaseResponse):
         Validate usage
         """
         if self.usage and self.usage.total_tokens and self.usage.prompt_tokens: return
-        if self._response.status_code == 200:
+        if self.response.status_code == 200:
             self.usage = Usage(
                 # prompt_tokens = get_token_count(self.input_text),
                 # completion_tokens = get_token_count(self.text),
@@ -549,6 +541,7 @@ class ChatResponse(BaseResponse):
 
             except Exception as e:
                 logger.trace(f'Error: {line}', e)
+        # self.ctx.stream_consumed = True
         self._stream_consumed = True
         for remaining_result in results.values():
             if streaming:
