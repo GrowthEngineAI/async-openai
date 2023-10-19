@@ -50,7 +50,7 @@ class MessageKind(str, enum.Enum):
 
 class StreamedChatMessage(BaseResource):
     kind: MessageKind
-    value: str
+    value: Union[Dict[str, Any], str]
 
 class FunctionCall(BaseResource):
     name: str
@@ -427,7 +427,7 @@ class ChatResponse(BaseResponse):
         # logger.info(f'Item: {item}')
         if not item['choices']: return None
         choice = item['choices'][0]
-        if choice['finish_reason'] == 'stop':
+        if choice['finish_reason'] in ['stop', 'function_call']:
             return None
         kind = MessageKind.from_choice(choice)
         return StreamedChatMessage(
