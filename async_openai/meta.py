@@ -37,6 +37,16 @@ class RotatingClients:
         Returns the list of client names.
         """
         return list(self.clients.keys())
+    
+    def run_client_init(self):
+        """
+        Initializes the Client. 
+
+        Can be subclassed to provide custom initialization.
+        """
+        self.init_api_client()
+        if self.settings.has_valid_azure:
+            self.init_api_client(client_name = 'az', is_azure = True, set_as_default = self.prioritize == 'azure', set_as_current = self.prioritize == 'azure')
 
     @property
     def api(self) -> 'OpenAIClient':
@@ -44,24 +54,32 @@ class RotatingClients:
         Returns the inherited OpenAI client.
         """
         if not self.clients: 
-            self.init_api_client()
-            if self.settings.has_valid_azure:
-                self.init_api_client(client_name = 'az', is_azure = True, set_as_default = self.prioritize == 'azure', set_as_current = self.prioritize == 'azure')
+            self.run_client_init()
         if not self.rotate_client_names:
             return self.clients[self.client_names[self.rotate_index]]
         return self.clients[self.rotate_client_names[self.rotate_index]]
     
-    def rotate_client(self, index: Optional[int] = None, verbose: Optional[bool] = False):
+    def increase_rotate_index(self):
+        """
+        Increases the rotate index
+        """
+        if self.rotate_index >= len(self.clients) - 1:
+            self.rotate_index = 0
+        else:
+            self.rotate_index += 1
+
+    
+    def rotate_client(self, index: Optional[int] = None, require_azure: Optional[bool] = None, verbose: Optional[bool] = False):
         """
         Rotates the clients
         """
         if index is not None:
             self.rotate_index = index
             return
-        if self.rotate_index >= len(self.clients) - 1:
-            self.rotate_index = 0
-        else:
-            self.rotate_index += 1
+        self.increase_rotate_index()
+        if require_azure:
+            while not self.api.is_azure:
+                self.increase_rotate_index()
         if verbose:
             logger.info(f'Rotated Client: {self.api.name} (Azure: {self.api.is_azure} - {self.api.api_version}) [{self.rotate_index+1}/{len(self.clients)}]')
     
@@ -157,13 +175,19 @@ class RotatingClients:
             self.rotate_index = self.rotate_client_names.index(client_name)
         return client
     
-    def get_api_client(self, client_name: Optional[str] = None, **kwargs) -> 'OpenAIClient':
+    def get_api_client(self, client_name: Optional[str] = None, require_azure: Optional[bool] = None, **kwargs) -> 'OpenAIClient':
         """
         Initializes a new OpenAI client or Returns an existing one.
         """
-        client_name = client_name or 'default'
-        if client_name not in self.clients:
+        if not client_name and not self.clients:
+            client_name = 'default'
+        if client_name and client_name not in self.clients:
             self.clients[client_name] = self.init_api_client(client_name = client_name, **kwargs)
+        
+        if not client_name and require_azure:
+            while not self.api.is_azure:
+                self.increase_rotate_index()
+            return self.api
         return self.clients[client_name]
 
     def __getitem__(self, key: Union[str, int]) -> 'OpenAIClient':
@@ -561,13 +585,13 @@ class OpenAIMetaClass(type):
             cls._api = client
         return client
     
-    def rotate_client(cls, index: Optional[int] = None, verbose: Optional[bool] = False):
+    def rotate_client(cls, index: Optional[int] = None, verbose: Optional[bool] = False, **kwargs):
         """
         Rotates the clients
         """
         if not cls.enable_rotating_clients:
             raise ValueError('Rotating Clients is not enabled.')
-        cls.apis.rotate_client(index = index, verbose = verbose)
+        cls.apis.rotate_client(index = index, verbose = verbose, **kwargs)
     
     def set_client(cls, client_name: Optional[str] = None, verbose: Optional[bool] = False):
         """
