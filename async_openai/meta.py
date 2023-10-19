@@ -183,12 +183,12 @@ class RotatingClients:
             client_name = 'default'
         if client_name and client_name not in self.clients:
             self.clients[client_name] = self.init_api_client(client_name = client_name, **kwargs)
-        
+
         if not client_name and require_azure:
             while not self.api.is_azure:
                 self.increase_rotate_index()
             return self.api
-        return self.clients[client_name]
+        return self.clients[client_name] if client_name else self.api
 
     def __getitem__(self, key: Union[str, int]) -> 'OpenAIClient':
         """
