@@ -25,6 +25,7 @@ __all__ = [
     'CompletionRoute',
 ]
 
+SchemaObj = TypeVar("SchemaObj", bound=BaseModel)
 SchemaType = TypeVar("SchemaType", bound=Type[BaseModel])
 
 class MessageKind(str, enum.Enum):
@@ -278,7 +279,7 @@ class ChatResponse(BaseResponse):
         return [msg.function_call for msg in self.messages if msg.function_call]
     
     @lazyproperty
-    def function_result_objects(self) -> List[Union[SchemaType, Dict[str, Any]]]:
+    def function_result_objects(self) -> List[Union[SchemaObj, Dict[str, Any]]]:
         """
         Returns the function result objects for the completions
         """
@@ -296,13 +297,23 @@ class ChatResponse(BaseResponse):
                     continue
                 except Exception as e:
                     logger.error(e)
-            try:
-                results.append(json.loads(func_result.arguments))
-            except Exception as e:
-                logger.error(e)
+            if isinstance(func_result.arguments, dict):
                 results.append(func_result.arguments)
+            else:
+                try:
+                    results.append(json.loads(func_result.arguments))
+                except Exception as e:
+                    logger.error(e)
+                    results.append(func_result.arguments)
 
         return results
+    
+    @lazyproperty
+    def has_functions(self) -> bool:
+        """
+        Returns whether the response has functions
+        """
+        return bool(self.input_object.functions)
 
     @lazyproperty
     def input_text(self) -> str:
@@ -333,6 +344,14 @@ class ChatResponse(BaseResponse):
         """
         Returns the text for the chat response without the role
         """
+        if self.has_functions:
+            data = []
+            for func_obj in self.function_result_objects:
+                if isinstance(func_obj, BaseModel):
+                    data.append(func_obj.dict())
+                else:
+                    data.append(func_obj)
+            return json.dumps(data, indent = 2)
         if self.choices_results:
             return '\n'.join([msg.content for msg in self.messages])
         return self.response.text
