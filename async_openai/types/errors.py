@@ -176,8 +176,9 @@ def fatal_exception(exc):
     if isinstance(exc, OpenAIError):
         # retry on server errors and client errors
         # with 429 status code (rate limited),
+        # with 400, 404, 415 status codes (invalid request),
         # don't retry on other client errors
-        return (400 <= exc.status < 500) and exc.status != 429
+        return (400 <= exc.status < 500) and exc.status not in [429, 400, 404, 415]
     else:
         # retry on all other errors (eg. network)
         return False

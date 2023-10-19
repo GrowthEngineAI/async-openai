@@ -34,6 +34,7 @@ class ApiRoutes:
     def __init__(
         self,
         client: aiohttpx.Client,
+        name: str,
         # headers: Optional[Dict] = None,
         debug_enabled: Optional[bool] = False,
         on_error: Optional[Callable] = None,
@@ -49,6 +50,7 @@ class ApiRoutes:
         **kwargs
     ):
         self.client = client
+        self.name = name
         self.settings = settings or get_settings()
         # self.headers = headers or self.settings.get_headers()
         self.debug_enabled = debug_enabled
@@ -74,6 +76,7 @@ class ApiRoutes:
             try:
                 setattr(self, route, route_class(
                     client = self.client,
+                    name = self.name,
                     # headers = self.headers,
                     debug_enabled = self.debug_enabled,
                     on_error = self.on_error,
@@ -87,5 +90,5 @@ class ApiRoutes:
                     **self.kwargs
                 ))
             except Exception as e:
-                logger.error(f"Failed to initialize route {route} with error: {e}")
+                logger.error(f"[{self.name}] Failed to initialize route {route} with error: {e}")
                 raise e

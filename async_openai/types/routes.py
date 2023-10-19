@@ -50,6 +50,7 @@ def get_retry_wrapper(
 
 class BaseRoute(BaseModel):
     client: aiohttpx.Client
+    name: str # Client Name
     # headers: Dict[str, str] = Field(default_factory = get_default_headers)
     success_codes: Optional[List[int]] = RESPONSE_SUCCESS_CODES
     
@@ -875,9 +876,9 @@ class BaseRoute(BaseModel):
         is_stream = not hasattr(response, "_content")
         if self.debug_enabled:
             if is_stream:
-                logger.info(f'[Stream] [{response.status_code} - {response.request.url}] headers: {response.headers}')
+                logger.info(f'[{self.name} - Stream] [{response.status_code} - {response.request.url}] headers: {response.headers}')
             else:
-                logger.info(f'[{response.status_code} - {response.request.url}] headers: {response.headers}, body: {response.text[:250]}')
+                logger.info(f'[{self.name} - {response.status_code} - {response.request.url}] headers: {response.headers}, body: {response.text[:250]}')
         
         if response.status_code in self.success_codes:
             if is_stream: return response
@@ -906,7 +907,7 @@ class BaseRoute(BaseModel):
         Handle Sending Requests
         """
         if timeout is None: timeout = self.timeout
-        if self.debug_enabled: logger.info(f'[{method} - {url}] headers: {headers}, params: {params}, data: {data}')
+        if self.debug_enabled: logger.info(f'[{self.name} - {method} - {url}] headers: {headers}, params: {params}, data: {data}')
         request = self.client.build_request(
             method = method,
             url = url,
@@ -942,7 +943,7 @@ class BaseRoute(BaseModel):
         """
         
         if timeout is None: timeout = self.timeout
-        if self.debug_enabled: logger.info(f'[{method} - {url}] headers: {headers}, params: {params}, data: {data}')
+        if self.debug_enabled: logger.info(f'[{self.name} - {method} - {url}] headers: {headers}, params: {params}, data: {data}')
         request = await self.client.async_build_request(
             method = method,
             url = url,

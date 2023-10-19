@@ -261,6 +261,7 @@ class OpenAIClient:
         if self._kwargs: kwargs.update(self._kwargs)
         self._routes = ApiRoutes(
             client = self.client,
+            name = self.name,
             # headers = self.headers,
             debug_enabled = self.debug_enabled,
             on_error = self.on_error,
