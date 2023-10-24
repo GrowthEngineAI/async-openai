@@ -12,7 +12,7 @@ from async_openai.types.options import OpenAIModel, get_consumption_cost
 from async_openai.types.resources import BaseResource, Usage
 from async_openai.types.responses import BaseResponse
 from async_openai.types.routes import BaseRoute
-from async_openai.types.errors import RateLimitError, APIError, MaxRetriesExceeded
+from async_openai.types.errors import RateLimitError, InvalidMaxTokens, InvalidRequestError, APIError, MaxRetriesExceeded
 from async_openai.utils import logger, get_max_chat_tokens, get_chat_tokens_count, parse_stream, aparse_stream
 
 
@@ -719,20 +719,9 @@ class ChatRoute(BaseRoute):
             return super().create(input_object = input_object, parse_stream = parse_stream, **kwargs)
         except RateLimitError as e:
             if current_attempt >= auto_retry_limit:
-                raise MaxRetriesExceeded(attempts=current_attempt, base_exception=e) from e
-            sleep_interval = 15.0
-            with contextlib.suppress(Exception):
-                if 'Please retry after' in str(e):
-                    sleep_interval = (
-                        float(
-                            str(e)
-                            .split("Please retry after")[1]
-                            .split("second")[0]
-                            .strip()
-                        )
-                        * 1.5
-                    )
-            logger.warning(f'[{current_attempt}/{auto_retry_limit}] Rate Limit Error. Sleeping for {sleep_interval} seconds')
+                raise MaxRetriesExceeded(name = self.name, attempts = current_attempt, base_exception = e) from e
+            sleep_interval = e.retry_after_seconds * 1.5 if e.retry_after_seconds else 15.0
+            logger.warning(f'[{self.name}: {current_attempt}/{auto_retry_limit}] Rate Limit Error. Sleeping for {sleep_interval} seconds')
             time.sleep(sleep_interval)
             current_attempt += 1
             return self.create(
@@ -743,10 +732,12 @@ class ChatRoute(BaseRoute):
                 _current_attempt = current_attempt,
                 **kwargs
             )
+
+        
         except APIError as e:
             if current_attempt >= auto_retry_limit:
-                raise MaxRetriesExceeded(attempts=current_attempt, base_exception=e) from e
-            logger.warning(f'[{current_attempt}/{auto_retry_limit}] API Error: {e}. Sleeping for 10 seconds')
+                raise MaxRetriesExceeded(name = self.name, attempts=current_attempt, base_exception = e) from e
+            logger.warning(f'[{self.name}: {current_attempt}/{auto_retry_limit}] API Error: {e}. Sleeping for 10 seconds')
             time.sleep(10.0)
             current_attempt += 1
             return self.create(
@@ -757,11 +748,14 @@ class ChatRoute(BaseRoute):
                 _current_attempt = current_attempt,
                 **kwargs
             )
-
+        
+        except (InvalidMaxTokens, InvalidRequestError) as e:
+            raise e
+        
         except Exception as e:
             if current_attempt >= auto_retry_limit:
-                raise MaxRetriesExceeded(attempts=current_attempt, base_exception=e) from e
-            logger.warning(f'[{current_attempt}/{auto_retry_limit}] Unknown Error: {e}. Sleeping for 10 seconds')
+                raise MaxRetriesExceeded(name = self.name, attempts = current_attempt, base_exception = e) from e
+            logger.warning(f'[{self.name}: {current_attempt}/{auto_retry_limit}] Unknown Error: {e}. Sleeping for 10 seconds')
             time.sleep(10.0)
             current_attempt += 1
             return self.create(
@@ -893,20 +887,9 @@ class ChatRoute(BaseRoute):
             return await super().async_create(input_object = input_object, parse_stream = parse_stream, **kwargs)
         except RateLimitError as e:
             if current_attempt >= auto_retry_limit:
-                raise MaxRetriesExceeded(attempts=current_attempt, base_exception=e) from e
-            sleep_interval = 15.0
-            with contextlib.suppress(Exception):
-                if 'Please retry after' in str(e):
-                    sleep_interval = (
-                        float(
-                            str(e)
-                            .split("Please retry after")[1]
-                            .split("second")[0]
-                            .strip()
-                        )
-                        * 1.5
-                    )
-            logger.warning(f'[{current_attempt}/{auto_retry_limit}] Rate Limit Error. Sleeping for {sleep_interval} seconds')
+                raise MaxRetriesExceeded(name = self.name, attempts = current_attempt, base_exception = e) from e
+            sleep_interval = e.retry_after_seconds * 1.5 if e.retry_after_seconds else 15.0
+            logger.warning(f'[{self.name}: {current_attempt}/{auto_retry_limit}] Rate Limit Error. Sleeping for {sleep_interval} seconds')
             await asyncio.sleep(sleep_interval)
             current_attempt += 1
             return await self.async_create(
@@ -919,8 +902,8 @@ class ChatRoute(BaseRoute):
             )
         except APIError as e:
             if current_attempt >= auto_retry_limit:
-                raise MaxRetriesExceeded(attempts=current_attempt, base_exception=e) from e
-            logger.warning(f'[{current_attempt}/{auto_retry_limit}] API Error: {e}. Sleeping for 10 seconds')
+                raise MaxRetriesExceeded(name = self.name, attempts = current_attempt, base_exception = e) from e
+            logger.warning(f'[{self.name}: {current_attempt}/{auto_retry_limit}] API Error: {e}. Sleeping for 10 seconds')
             await asyncio.sleep(10.0)
             current_attempt += 1
             return await self.async_create(
@@ -932,10 +915,13 @@ class ChatRoute(BaseRoute):
                 **kwargs
             )
 
+        except (InvalidMaxTokens, InvalidRequestError) as e:
+            raise e
+        
         except Exception as e:
             if current_attempt >= auto_retry_limit:
-                raise MaxRetriesExceeded(attempts=current_attempt, base_exception=e) from e
-            logger.warning(f'[{current_attempt}/{auto_retry_limit}] Unknown Error: {e}. Sleeping for 10 seconds')
+                raise MaxRetriesExceeded(name = self.name, attempts = current_attempt, base_exception = e) from e
+            logger.warning(f'[{self.name}: {current_attempt}/{auto_retry_limit}] Unknown Error: {e}. Sleeping for 10 seconds')
             await asyncio.sleep(10.0)
             current_attempt += 1
             return await self.async_create(

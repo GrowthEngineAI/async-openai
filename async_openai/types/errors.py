@@ -1,6 +1,7 @@
 
 import json
 import aiohttpx
+import contextlib
 from typing import Any, Optional, Union, Dict
 from lazyops.types import BaseModel, lazyproperty
 
@@ -112,6 +113,10 @@ class OpenAIError(Exception):
             should_retry=should_retry,
             **kwargs
         )
+        self.post_init(**kwargs)
+    
+    def post_init(self, **kwargs):
+        pass
     
     def __str__(self):
         msg = self.exc.error_message or "<empty message>"
@@ -161,7 +166,15 @@ class PermissionError(OpenAIError):
 
 
 class RateLimitError(OpenAIError):
-    pass
+    
+    def post_init(self, **kwargs):
+        """
+        Gets the rate limit reset time
+        """
+        self.retry_after_seconds: Optional[float] = None
+        with contextlib.suppress(Exception):
+            self.retry_after_seconds = float(self.exc.error_message.split("Please retry after", 1)[1].split("second", 1)[0].strip())
+
 
 
 class ServiceUnavailableError(OpenAIError):
@@ -172,16 +185,37 @@ class InvalidAPIType(OpenAIError):
     pass
 
 
+class InvalidMaxTokens(InvalidRequestError):
+    pass
+
+    def post_init(self, **kwargs):
+        """
+        Gets the maximum context length and requested max tokens
+        """
+        self.maximum_context_length: Optional[int] = None
+        self.requested_max_tokens: Optional[int] = None
+        with contextlib.suppress(Exception):
+            self.maximum_context_length = int(self.exc.error_message.split("maximum context length is", 1)[1].split(" ", 1)[0].strip())
+            self.requested_max_tokens = int(self.exc.error_message.split("requested", 1)[1].split(" ", 1)[0].strip())
+
+
 def fatal_exception(exc):
-    if isinstance(exc, OpenAIError):
-        # retry on server errors and client errors
-        # with 429 status code (rate limited),
-        # with 400, 404, 415 status codes (invalid request),
-        # don't retry on other client errors
-        return (400 <= exc.status < 500) and exc.status not in [429, 400, 404, 415]
-    else:
+    """
+    Checks if the exception is fatal.
+    """
+    if not isinstance(exc, OpenAIError):
         # retry on all other errors (eg. network)
         return False
+    
+    # retry on server errors and client errors
+    # with 429 status code (rate limited),
+    # with 400, 404, 415 status codes (invalid request),
+    # 400 can include invalid parameters, such as invalid `max_tokens`
+    # don't retry on other client errors
+    if isinstance(exc, (InvalidMaxTokens, InvalidRequestError)):
+        return True
+    
+    return (400 <= exc.status < 500) and exc.status not in [429, 400, 404, 415] # [429, 400, 404, 415]
 
 
 def error_handler(
@@ -207,6 +241,13 @@ def error_handler(
             **kwargs
         )
     if response.status_code in [400, 404, 415]:
+        if 'maximum context length' in response.text:
+            return InvalidMaxTokens(
+                response = response,
+                data = data,
+                should_retry = False,
+                **kwargs
+            )
         return InvalidRequestError(
             response = response,
             data = data,
@@ -249,12 +290,14 @@ class MaxRetriesExceeded(Exception):
         self,
         attempts: int,
         base_exception: OpenAIError,
+        name: Optional[str] = None,
     ):
+        self.name = name
         self.attempts = attempts
         self.ex = base_exception
     
     def __str__(self):
-        return f"Max {self.attempts} retries exceeded: {str(self.ex)}"
+        return f"[{self.name}] Max {self.attempts} retries exceeded: {str(self.ex)}"
         
         
     @property
@@ -262,11 +305,11 @@ class MaxRetriesExceeded(Exception):
         """
         Returns the error message.
         """
-        return f"Max {self.attempts} retries exceeded: {self.ex.user_message}"
+        return f"[{self.name}] Max {self.attempts} retries exceeded: {self.ex.user_message}"
     
     def __repr__(self):
         """
         Returns the string representation of the error.
         """
-        return f"{repr(self.ex)} (attempts={self.attempts})"
+        return f"[{self.name}] {repr(self.ex)} (attempts={self.attempts})"
         
