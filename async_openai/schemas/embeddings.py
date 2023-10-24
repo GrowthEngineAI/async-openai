@@ -23,7 +23,7 @@ class EmbeddingData(BaseResource):
 
 class EmbeddingObject(BaseResource):
     model: Optional[Union[str, OpenAIModel, Any]] = "text-embedding-ada-002"
-    input: Optional[Union[List[Any], Any]]
+    input: Optional[Union[List[Any], Any]] = None
     user: Optional[str] = None
 
     @validator('model', pre=True, always=True)
@@ -50,7 +50,7 @@ class EmbeddingObject(BaseResource):
 
 
 class EmbeddingResponse(BaseResponse):
-    data: Optional[List[EmbeddingData]]
+    data: Optional[List[EmbeddingData]] = None
     data_model: Optional[Type[BaseResource]] = EmbeddingData
     input_object: Optional[EmbeddingObject] = None
 
