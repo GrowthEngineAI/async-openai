@@ -4,8 +4,8 @@ Based on https://github.com/josdejong/jsonrepair
 
 import re
 import json
-from typing import Optional
-
+from typing import Optional, Dict, List, Any, Union
+from .logs import logger
 
 CONTROL_CHARACTERS = {"\b": "\\b", "\f": "\\f", "\n": "\\n", "\r": "\\r", "\t": "\\t"}
 ESCAPE_CHARACTERS = {
@@ -629,4 +629,23 @@ def fix_json(
     Takes a string that may contain invalid JSON and attempts to fix it
     """
     return JsonRepair(text).repair()
-    
+
+
+def resolve_json(
+    text: str,
+    verbose: Optional[bool] = True,
+) -> Union[Dict[Any, Any], List[Any], Any]:
+    """
+    Takes a string that may contain invalid JSON and attempts to fix it
+    """
+    try:
+        return json.loads(text)
+    except json.decoder.JSONDecodeError as e:
+        if verbose: logger.error(f"Invalid JSON: {e}. Attempting to fix...")
+        try:
+            return json.loads(fix_json(text))
+        except Exception as e:
+            if verbose: logger.error(f"Unable to fix JSON: {e}")
+            raise e
+
+        

@@ -14,6 +14,7 @@ from async_openai.types.responses import BaseResponse
 from async_openai.types.routes import BaseRoute
 from async_openai.types.errors import RateLimitError, InvalidMaxTokens, InvalidRequestError, APIError, MaxRetriesExceeded
 from async_openai.utils import logger, get_max_chat_tokens, get_chat_tokens_count, parse_stream, aparse_stream
+from async_openai.utils.fixjson import resolve_json
 
 
 __all__ = [
@@ -146,7 +147,7 @@ class ChatObject(BaseResource):
     user: Optional[str] = None
 
     functions: Optional[List[Function]] = None
-    function_call: Optional[str] = None
+    function_call: Optional[Union[str, Dict[str, str]]] = None
 
     validate_max_tokens: Optional[bool] = Field(default = True, exclude = True)
 
@@ -292,6 +293,12 @@ class ChatResponse(BaseResponse):
 
         for func_result in self.function_results:
             if source_function.source_object:
+                if not isinstance(func_result.arguments, dict):
+                    try:
+                        func_result.arguments = resolve_json(func_result.arguments)
+                    except Exception as e:
+                        logger.error('Could not resolve function arguments. Skipping.')
+                        continue
                 try:
                     results.append(source_function.source_object(**func_result.arguments))
                     continue
@@ -301,8 +308,9 @@ class ChatResponse(BaseResponse):
                 results.append(func_result.arguments)
             else:
                 try:
-                    results.append(json.loads(func_result.arguments))
+                    results.append(resolve_json(func_result.arguments))
                 except Exception as e:
+
                     logger.error(e)
                     results.append(func_result.arguments)
 
