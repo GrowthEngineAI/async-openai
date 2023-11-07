@@ -2,11 +2,9 @@ from typing import Optional, Type, Any, Union, List, Dict
 from lazyops.types import validator, lazyproperty, BaseModel
 
 from async_openai.types.options import ImageSize, ImageFormat
-from async_openai.types.resources import BaseResource
+from async_openai.types.resources import BaseResource, File, FileType, _has_fileio
 from async_openai.types.responses import BaseResponse
 from async_openai.types.routes import BaseRoute
-
-from fileio import File, FileType
 
 __all__ = [
     'ImageData',
@@ -59,10 +57,10 @@ class ImageObject(BaseResource):
         files = [(k, (None, v)) for k, v in self.dict(exclude_none=True, exclude={'mask', 'image'}).items()]
         if self.mask:
             mask = File(self.mask)
-            files.append(("mask", ("mask", await mask.async_read_bytes(), "application/octet-stream")))
+            files.append(("mask", ("mask", (await mask.async_read_bytes() if _has_fileio else mask.read_bytes()), "application/octet-stream")))
         if self.image:
             image = File(self.image)
-            files.append(("image", ("image", await image.async_read_bytes(), "application/octet-stream")))
+            files.append(("image", ("image", (await image.async_read_bytes() if _has_fileio else image.read_bytes()), "application/octet-stream")))
         
         return files
 

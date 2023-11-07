@@ -1,3 +1,4 @@
+import os
 import json
 import aiohttpx
 import datetime
@@ -8,11 +9,20 @@ from lazyops.types.models import get_pyd_field_names, pyd_parse_obj, get_pyd_dic
 from lazyops.utils import ObjectDecoder
 from async_openai.utils.logs import logger
 from async_openai.utils.helpers import aparse_stream, parse_stream
-from fileio import File, FileType
 
 from async_openai.types.options import FilePurpose
 
 from typing import Dict, Optional, Any, List, Type, Union, Tuple, Iterator, AsyncIterator, TYPE_CHECKING
+
+
+try:
+    from fileio import File, FileType
+    _has_fileio = True
+except ImportError:
+    from pathlib import Path as File
+    FileType = Union[File, str, os.PathLike]
+    _has_fileio = False
+
 
 __all__ = [
     'BaseResource',
@@ -46,7 +56,10 @@ class Usage(BaseModel):
     total_tokens: Optional[int] = 0
 
     @lazyproperty
-    def consumption(self):
+    def consumption(self) -> int:
+        """
+        Gets the consumption
+        """
         return self.total_tokens
     
     def update(self, usage: Union['Usage', Dict[str, int]]):
@@ -277,6 +290,6 @@ class FileResource(BaseResource):
         if self.file:
             file = File(self.file)
             files.append(
-                ("file", (self.filename or file.name, await file.async_read_bytes(), "application/octet-stream"))
+                ("file", (self.filename or file.name, (await file.async_read_bytes() if _has_fileio else file.read_bytes()), "application/octet-stream"))
             )
         return files

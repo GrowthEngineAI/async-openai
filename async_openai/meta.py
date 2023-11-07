@@ -10,6 +10,7 @@ from typing import Optional, List, Callable, Dict, Union, overload, TYPE_CHECKIN
 
 from async_openai.schemas import *
 from async_openai.types.options import ApiType
+from async_openai.types.costs import ModelCostHandler
 from async_openai.utils.config import get_settings, OpenAISettings
 from async_openai.utils.logs import logger
 
@@ -517,7 +518,10 @@ class OpenAIMetaClass(type):
         if on_error is not None: cls.on_error = on_error
         if prioritize is not None: cls.prioritize = prioritize
         if enable_rotating_clients is not None: cls.enable_rotating_clients = enable_rotating_clients
-        if azure_model_mapping is not None: cls.azure_model_mapping = azure_model_mapping
+        if azure_model_mapping is not None: 
+            cls.azure_model_mapping = azure_model_mapping
+            for key, val in azure_model_mapping.items():
+                ModelCostHandler.add_model(key, val)
         cls.settings.configure(**kwargs)
     
     def configure_client(

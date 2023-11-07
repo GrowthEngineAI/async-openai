@@ -8,12 +8,12 @@ from typing import Optional, Type, Any, Union, List, Dict, Iterator, AsyncIterat
 from lazyops.types import validator, lazyproperty
 from lazyops.types.models import root_validator, pre_root_validator, Field
 
-from async_openai.types.options import OpenAIModel, get_consumption_cost
+from async_openai.types.costs import ModelCostHandler
 from async_openai.types.resources import BaseResource, Usage
 from async_openai.types.responses import BaseResponse
 from async_openai.types.routes import BaseRoute
 from async_openai.types.errors import RateLimitError, APIError, MaxRetriesExceeded, InvalidMaxTokens, InvalidRequestError
-from async_openai.utils import logger, get_max_tokens, get_token_count, parse_stream, aparse_stream
+from async_openai.utils import logger, parse_stream, aparse_stream
 
 
 __all__ = [
@@ -43,7 +43,7 @@ class CompletionChoice(BaseResource):
 
 class CompletionObject(BaseResource):
     prompt: Union[List[str], str] = '<|endoftext|>'
-    model: Optional[Union[OpenAIModel, str, Any]] = "davinci"
+    model: Optional[str] = "gpt-3.5-turbo-instruct"
     # prompt: Optional[Union[List[str], str]] = '<|endoftext|>'
     suffix: Optional[str] = None
     max_tokens: Optional[int] = 16
@@ -59,20 +59,24 @@ class CompletionObject(BaseResource):
     best_of: Optional[int] = 1
     logit_bias: Optional[Dict[str, float]] = None
     user: Optional[str] = None
-    validate_max_tokens: Optional[bool] = Field(default = True, exclude = True)
+
+    validate_max_tokens: Optional[bool] = Field(default = False, exclude = True)
+    # validate_model_aliases: Optional[bool] = Field(default = False, exclude = True)
 
     @validator('model', pre=True, always=True)
-    def validate_model(cls, v, values: Dict[str, Any]) -> OpenAIModel:
+    def validate_model(cls, v, values: Dict[str, Any]) -> str:
         """
         Validate the model
         """
-        if not v and values.get('engine'):
-            v = values.get('engine')
-        if isinstance(v, OpenAIModel):
-            return v
-        if isinstance(v, dict):
-            return OpenAIModel(**v)
-        return OpenAIModel(value = v, mode = 'completion')
+        if not v:
+            if values.get('engine'):
+                v = values.get('engine')
+            elif values.get('deployment'):
+                v = values.get('deployment')
+        v = ModelCostHandler.resolve_model_name(v)
+        # if values.get('validate_model_aliases', False):
+        #     v = ModelCostHandler[v].name
+        return v
 
     
     @validator('temperature')
@@ -120,24 +124,7 @@ class CompletionObject(BaseResource):
         """
         Returns the dict representation of the response
         """
-        data = super().dict(*args, exclude = exclude, **kwargs)
-        if data.get('model'):
-            data['model'] = data['model'].value
-        return data
-    
-    @root_validator(pre = True)
-    def validate_obj(cls, values: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Validate the object
-        """
-        if (values.get('validate_max_tokens') and values.get('max_tokens')) \
-            or (values.get('max_tokens') is not None and values['max_tokens'] <= 0):
-            values['max_tokens'] = get_max_tokens(
-                text = values['prompt'],
-                max_tokens = values.get('max_tokens'),
-                model_name = values['model'].value,
-            )        
-        return values
+        return super().dict(*args, exclude = exclude, **kwargs)
 
 
     
@@ -161,15 +148,14 @@ class CompletionResponse(BaseResponse):
         """
         Returns the model for the completions
         """
-        return self.headers.get('openai-model', self.completion_model.value)
+        return self.headers.get('openai-model', self.completion_model)
 
-    
     @lazyproperty
     def completion_model(self):
         """
         Returns the model for the completions
         """
-        return OpenAIModel(value=self.model, mode='completion') if self.model else None
+        return self.input_object.model or None
 
     def _validate_usage(self):
         """
@@ -178,8 +164,8 @@ class CompletionResponse(BaseResponse):
         if self.usage and self.usage.total_tokens: return
         if self.response.status_code == 200:
             self.usage = Usage(
-                prompt_tokens = get_token_count(self.input_object.prompt),
-                completion_tokens = get_token_count(self.text),
+                prompt_tokens = ModelCostHandler.count_tokens(self.input_object.prompt),
+                completion_tokens = ModelCostHandler.count_tokens(self.text),
             )
             self.usage.total_tokens = self.usage.prompt_tokens + self.usage.completion_tokens
 
@@ -189,23 +175,16 @@ class CompletionResponse(BaseResponse):
         Returns the consumption for the completions
         """ 
         self._validate_usage()
-        return get_consumption_cost(
+        return ModelCostHandler.get_consumption_cost(
             model_name = self.openai_model,
-            mode = 'completion',
-            total_tokens = self.usage.total_tokens,
-            prompt_tokens = self.usage.prompt_tokens,
-            completion_tokens = self.usage.completion_tokens,
+            usage = self.usage,
         )
-
 
     def dict(self, *args, exclude: Any = None, **kwargs):
         """
         Returns the dict representation of the response
         """
-        data = super().dict(*args, exclude = exclude, **kwargs)
-        if data.get('completion_model'):
-            data['completion_model'] = data['completion_model'].dict()
-        return data
+        return super().dict(*args, exclude = exclude, **kwargs)
 
     def parse_stream_item(self, item: Union[Dict, Any], **kwargs) -> Optional[StreamedCompletionChoice]:
         """

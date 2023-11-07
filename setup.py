@@ -13,12 +13,12 @@ version = root.joinpath('async_openai/version.py').read_text().split('VERSION = 
 
 requirements = [
     'aiohttpx',
-    'file-io',
+    # 'file-io',
     'backoff',
     'tiktoken',
     'lazyops >= 0.2.60', # Pydantic Support
     'pydantic',
-    'pydantic-settings',
+    # 'pydantic-settings', # remove to allow for v1/v2 support
 ]
 
 if sys.version_info.minor < 8:

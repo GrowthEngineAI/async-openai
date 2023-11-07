@@ -5,15 +5,15 @@ import asyncio
 import aiohttpx
 import contextlib
 from typing import Optional, Type, Any, Union, List, Dict, Iterator, TypeVar, AsyncIterator, Generator, AsyncGenerator, TYPE_CHECKING
-from lazyops.types import validator, lazyproperty
+from lazyops.types import validator, lazyproperty, Literal
 from lazyops.types.models import root_validator, pre_root_validator, Field, BaseModel, PYD_VERSION, get_pyd_schema
 
-from async_openai.types.options import OpenAIModel, get_consumption_cost
+from async_openai.types.costs import ModelCostHandler
 from async_openai.types.resources import BaseResource, Usage
 from async_openai.types.responses import BaseResponse
 from async_openai.types.routes import BaseRoute
 from async_openai.types.errors import RateLimitError, InvalidMaxTokens, InvalidRequestError, APIError, MaxRetriesExceeded
-from async_openai.utils import logger, get_max_chat_tokens, get_chat_tokens_count, parse_stream, aparse_stream
+from async_openai.utils import logger, parse_stream, aparse_stream
 from async_openai.utils.fixjson import resolve_json
 
 
@@ -128,11 +128,17 @@ class Function(BaseResource):
         return values
 
 
+class Tool(BaseResource):
+    """
+    Represents a tool 
+    """
+    type: Optional[str] = 'function'
+    function: Optional[Function] = None
 
 
 class ChatObject(BaseResource):
     messages: Union[List[ChatMessage], str]
-    model: Optional[Union[OpenAIModel, str, Any]] = "gpt-3.5-turbo"
+    model: Optional[str] = "gpt-3.5-turbo"
 
     max_tokens: Optional[int] = None
     temperature: Optional[float] = 1.0
@@ -149,18 +155,29 @@ class ChatObject(BaseResource):
     functions: Optional[List[Function]] = None
     function_call: Optional[Union[str, Dict[str, str]]] = None
 
-    validate_max_tokens: Optional[bool] = Field(default = True, exclude = True)
+    # v2 Params
+    response_format: Optional[Dict[str, Literal['json_object', 'text']]] = None
+    seed: Optional[int] = None
 
+    # tools: Optional[Union[List[Function], List[Dict[str, Union[str, Function]]]]] = None
+    tools: Optional[List[Tool]] = None
+    tool_choice: Optional[Union[str, Union[str, Dict[str, str]]]] = None
+
+    # Extra Params
+    validate_max_tokens: Optional[bool] = Field(default = False, exclude = True)
+    validate_model_aliases: Optional[bool] = Field(default = False, exclude = True)
     # api_version: Optional[str] = None
 
     @validator('messages', pre = True, always = True)
     def validate_messages(cls, v) -> List[ChatMessage]:
+        """
+        Validate the Input Messages
+        """
         vals = []
         if not isinstance(v, list):
             v = [v]
         for i in v:
             if isinstance(i, dict):
-                # vals.append(pyd_parse_obj(ChatMessage, i, strict = False))
                 vals.append(ChatMessage.parse_obj(i))
             elif isinstance(i, str):
                 vals.append(ChatMessage(content = i))
@@ -169,18 +186,21 @@ class ChatObject(BaseResource):
         return vals
 
     @validator('model', pre=True, always=True)
-    def validate_model(cls, v, values: Dict[str, Any]) -> OpenAIModel:
+    def validate_model(cls, v, values: Dict[str, Any]) -> str:
         """
         Validate the model
         """
-        if not v and values.get('engine'):
-            v = values.get('engine')
-        if isinstance(v, OpenAIModel):
-            return v
-        if isinstance(v, dict):
-            return OpenAIModel(**v)
-        return OpenAIModel(value = v, mode = 'chat')
-
+        if not v:
+            if values.get('engine'):
+                v = values.get('engine')
+            elif values.get('deployment'):
+                v = values.get('deployment')
+        
+        v = ModelCostHandler.resolve_model_name(v)
+        # if values.get('validate_model_aliases', False):
+        #     v = ModelCostHandler[v].name
+        return v
+        
     
     @validator('temperature')
     def validate_temperature(cls, v: float) -> float:
@@ -226,36 +246,56 @@ class ChatObject(BaseResource):
         """
         Returns the dict representation of the response
         """
-        # data = get_pyd_dict(self, *args, exclude = exclude, **kwargs)
-        data = super().dict(*args, exclude = exclude, **kwargs)
-        # data['stream'] = False
-        if data.get('model'):
-            data['model'] = data['model'].src_value
-        # if data['max_tokens'] is None:
-        #     del data['max_tokens']
-        return data
-    
+        return super().dict(*args, exclude = exclude, **kwargs)
+
     @root_validator(pre = True)
     def validate_obj(cls, values: Dict[str, Any]) -> Dict[str, Any]:
         """
         Validate the object
         """
-        # Auto validate max tokens
-        # if values['validate_max_tokens'] or (values.get('max_tokens') is not None and values['max_tokens'] <= 0):
-        if (values.get('validate_max_tokens') and values.get('max_tokens')) \
-            or (values.get('max_tokens') is not None and values['max_tokens'] <= 0):
-            values['max_tokens'] = get_max_chat_tokens(
-                messages = values['messages'],
-                model_name = values['model'].src_value,
-                max_tokens = values.get('max_tokens')
-            )
+
+        is_azure = values.pop('is_azure', False)
+        
         if values.get('functions'):
             if not all(isinstance(f, Function) for f in values['functions']):
                 values['functions'] = [Function(**f) for f in values['functions']]
             if not values.get('function_call'):
                 values['function_call'] = 'auto'
-        return values
+            
+            # Auto set to json_object if functions are present
+            # if values.get('response_format') is None:
+            #     values['response_format'] = {'type': 'json_object'}
+        
+        if values.get('tools'):
+            tools = []
+            for tool in values['tools']:
+                if isinstance(tool, Tool):
+                    tools.append(tool)
+                elif isinstance(tool, dict):
+                    # This should be the correct format
+                    if tool.get('function'):
+                        tools.append(Tool(**tool))
+                    else:
+                        # This is previously supported format
+                        tools.append(Tool(function = Function(**tool)))
+                else:
+                    raise ValueError(f'Invalid tool: {tool}')
+            values['tools'] = tools
+            if not values.get('tool_choice'):
+                values['tool_choice'] = 'auto'
 
+            # Auto set to json_object if tools are present
+            # if values.get('response_format') is None:
+            #     values['response_format'] = {'type': 'json_object'}
+
+        # Validate for Azure
+        if is_azure and values.get('tools') and not values.get('functions'):
+            # Convert tools to functions
+            values['functions'] = [tool.function for tool in values['tools']]
+            if not values.get('function_call'):
+                values['function_call'] = 'auto'
+
+        return values
 
 
 class ChatResponse(BaseResponse):
@@ -287,7 +327,7 @@ class ChatResponse(BaseResponse):
         results = []
         source_function: Function = self.input_object.functions[0] if self.input_object.function_call == "auto" else (
             [
-                f for f in self.input_object.functions if f.name == self.input_object.function_call
+                f for f in self.input_object.functions if f.name == self.input_object.function_call['name']
             ]
         )[0]
 
@@ -322,6 +362,58 @@ class ChatResponse(BaseResponse):
         Returns whether the response has functions
         """
         return bool(self.input_object.functions)
+    
+
+    @lazyproperty
+    def tool_results(self) -> List[FunctionCall]:
+        """
+        Returns the tool results for the completions
+        """
+        return [msg.function_call for msg in self.messages if msg.function_call]
+    
+    @lazyproperty
+    def tool_result_objects(self) -> List[Union[SchemaObj, Dict[str, Any]]]:
+        """
+        Returns the tool result objects for the completions
+        """
+        results = []
+        source_function: Function = self.input_object.tools[0].function.source_object if self.input_object.tool_choice == "auto" else (
+            [
+                t.function for t in self.input_object.tools if t.function.name == self.input_object.tool_choice['function']['name']
+            ]
+        )[0]
+
+        for tool_result in self.tool_results:
+            if source_function.source_object:
+                if not isinstance(tool_result.arguments, dict):
+                    try:
+                        tool_result.arguments = resolve_json(tool_result.arguments)
+                    except Exception as e:
+                        logger.error('Could not resolve function arguments. Skipping.')
+                        continue
+                try:
+                    results.append(source_function.source_object(**tool_result.arguments))
+                    continue
+                except Exception as e:
+                    logger.error(e)
+            if isinstance(tool_result.arguments, dict):
+                results.append(tool_result.arguments)
+            else:
+                try:
+                    results.append(resolve_json(tool_result.arguments))
+                except Exception as e:
+
+                    logger.error(e)
+                    results.append(tool_result.arguments)
+
+        return results
+
+    @lazyproperty
+    def has_tools(self) -> bool:
+        """
+        Returns whether the response has tools
+        """
+        return bool(self.input_object.tools)
 
     @lazyproperty
     def input_text(self) -> str:
@@ -352,6 +444,14 @@ class ChatResponse(BaseResponse):
         """
         Returns the text for the chat response without the role
         """
+        if self.has_tools:
+            data = []
+            for tool_obj in self.tool_result_objects:
+                if isinstance(tool_obj, BaseModel):
+                    data.append(tool_obj.dict())
+                else:
+                    data.append(tool_obj)
+            return json.dumps(data, indent = 2)
         if self.has_functions:
             data = []
             for func_obj in self.function_result_objects:
@@ -365,7 +465,7 @@ class ChatResponse(BaseResponse):
         return self.response.text
 
     @lazyproperty
-    def chat_model(self):
+    def chat_model(self) -> Optional[str]:
         """
         Returns the model for the completions
         """
@@ -377,7 +477,7 @@ class ChatResponse(BaseResponse):
         """
         Returns the model for the completions
         """
-        return self.headers.get('openai-model', self.chat_model.value)
+        return self.headers.get('openai-model', self.chat_model)
     
     def _validate_usage(self):
         """
@@ -386,12 +486,8 @@ class ChatResponse(BaseResponse):
         if self.usage and self.usage.total_tokens and self.usage.prompt_tokens: return
         if self.response.status_code == 200:
             self.usage = Usage(
-                # prompt_tokens = get_token_count(self.input_text),
-                # completion_tokens = get_token_count(self.text),
-                prompt_tokens = get_chat_tokens_count(self.input_messages, model_name = self.chat_model.src_value),
-                completion_tokens = get_chat_tokens_count(self.messages, model_name = self.chat_model.src_value),
-                # prompt_tokens = get_max_chat_tokens(self.input_messages, model_name = self.chat_model.src_value),
-                # completion_tokens = get_max_chat_tokens(self.messages, model_name = self.chat_model.src_value),
+                prompt_tokens = ModelCostHandler.count_chat_tokens(self.input_messages, model_name = self.openai_model),
+                completion_tokens = ModelCostHandler.count_chat_tokens(self.messages, model_name = self.openai_model),
             )
             self.usage.total_tokens = self.usage.prompt_tokens + self.usage.completion_tokens
 
@@ -402,23 +498,16 @@ class ChatResponse(BaseResponse):
         Returns the consumption for the completions
         """ 
         self._validate_usage()
-        return get_consumption_cost(
+        return ModelCostHandler.get_consumption_cost(
             model_name = self.openai_model,
-            mode = 'chat',
-            prompt_tokens = self.usage.prompt_tokens,
-            completion_tokens = self.usage.completion_tokens,
-            total_tokens = self.usage.total_tokens,
+            usage = self.usage,
         )
-
 
     def dict(self, *args, exclude: Any = None, **kwargs):
         """
         Returns the dict representation of the response
         """
-        data = super().dict(*args, exclude = exclude, **kwargs)
-        if data.get('chat_model'):
-            data['chat_model'] = data['chat_model'].dict()
-        return data
+        return super().dict(*args, exclude = exclude, **kwargs)
     
 
     def __getitem__(self, key: str) -> Any:
@@ -504,9 +593,9 @@ class ChatResponse(BaseResponse):
             else:
                 yield remaining_result
         if not self.usage.prompt_tokens:
-            self.usage.prompt_tokens = get_chat_tokens_count(
-                messages = self.input_messages, 
-                model_name = self.chat_model.src_value
+            self.usage.prompt_tokens = ModelCostHandler.count_chat_tokens(
+                messages = self.input_messages,
+                model_name = self.openai_model
             )
         self.usage.total_tokens = self.usage.completion_tokens + self.usage.prompt_tokens
         
@@ -577,9 +666,9 @@ class ChatResponse(BaseResponse):
                 yield remaining_result
         
         if not self.usage.prompt_tokens:
-            self.usage.prompt_tokens = get_chat_tokens_count(
-                messages = self.input_messages, 
-                model_name = self.chat_model.src_value
+            self.usage.prompt_tokens = ModelCostHandler.count_chat_tokens(
+                messages = self.input_messages,
+                model_name = self.openai_model
             )
         self.usage.total_tokens = self.usage.completion_tokens + self.usage.prompt_tokens
 
@@ -707,6 +796,14 @@ class ChatRoute(BaseRoute):
         :functions (optional): A list of dictionaries representing the functions to call
         
         :function_call (optional): The name of the function to call. Default: `auto` if functions are provided
+
+        :response_format (optional): The format of the response. Default: `text`
+
+        :seed (optional): An integer seed for random sampling. Must be between 0 and 2**32 - 1
+
+        :tools (optional): A list of dictionaries representing the tools to use
+
+        :tool_choice (optional): The name of the tool to use. Default: `auto` if tools are provided
 
         :auto_retry (optional): Whether to automatically retry the request if it fails due to a rate limit error.
 
@@ -874,6 +971,14 @@ class ChatRoute(BaseRoute):
         :functions (optional): A list of dictionaries representing the functions to call
         
         :function_call (optional): The name of the function to call. Default: `auto` if functions are provided
+
+        :response_format (optional): The format of the response. Default: `text`
+
+        :seed (optional): An integer seed for random sampling. Must be between 0 and 2**32 - 1
+
+        :tools (optional): A list of dictionaries representing the tools to use
+
+        :tool_choice (optional): The name of the tool to use. Default: `auto` if tools are provided
 
         :auto_retry (optional): Whether to automatically retry the request if it fails due to a rate limit error.
 

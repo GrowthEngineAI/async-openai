@@ -1,11 +1,14 @@
-from typing import Optional, Type, Any, Union, List
+import time
+import asyncio
+from typing import Optional, Type, Any, Union, List, Dict
 from lazyops.types import validator, lazyproperty
 
-from async_openai.types.options import OpenAIModel, get_consumption_cost
+from async_openai.types.costs import ModelCostHandler
 from async_openai.types.resources import BaseResource
 from async_openai.types.responses import BaseResponse
 from async_openai.types.routes import BaseRoute
-
+from async_openai.types.errors import RateLimitError, InvalidMaxTokens, InvalidRequestError, APIError, MaxRetriesExceeded
+from async_openai.utils import logger
 
 __all__ = [
     'EmbeddingData',
@@ -22,30 +25,31 @@ class EmbeddingData(BaseResource):
     index: Optional[int] = 0
 
 class EmbeddingObject(BaseResource):
-    model: Optional[Union[str, OpenAIModel, Any]] = "text-embedding-ada-002"
+    model: Optional[str] = "text-embedding-ada-002"
     input: Optional[Union[List[Any], Any]] = None
     user: Optional[str] = None
 
     @validator('model', pre=True, always=True)
-    def validate_model(cls, v) -> OpenAIModel:
+    def validate_model(cls, v, values: Dict[str, Any]) -> str:
         """
         Validate the model
         """
-        if isinstance(v, OpenAIModel):
-            return v
-        if isinstance(v, dict):
-            return OpenAIModel(**v)
-        return OpenAIModel(value = v, mode = 'embedding')
+        if not v:
+            if values.get('engine'):
+                v = values.get('engine')
+            elif values.get('deployment'):
+                v = values.get('deployment')
+        v = ModelCostHandler.resolve_model_name(v)
+        # if values.get('validate_model_aliases', False):
+        #     v = ModelCostHandler[v].name
+        return v
     
 
     def dict(self, *args, exclude: Any = None, **kwargs):
         """
         Returns the dict representation of the response
         """
-        data = super().dict(*args, exclude = exclude, **kwargs)
-        if data.get('model'):
-            data['model'] = data['model'].value
-        return data
+        return super().dict(*args, exclude = exclude, **kwargs)
     
 
 
@@ -63,26 +67,22 @@ class EmbeddingResponse(BaseResponse):
         if self.data:
             return [data.embedding for data in self.data] if self.data else []
         return None
-    
 
     @lazyproperty
     def openai_model(self):
         """
         Returns the model for the completions
         """
-        return self.headers.get('openai-model', self.input_object.model.value)
+        return self.headers.get('openai-model', self.input_object.model)
 
     @lazyproperty
     def consumption(self) -> int:
         """
         Returns the consumption for the completions
         """ 
-        return get_consumption_cost(
+        return ModelCostHandler.get_consumption_cost(
             model_name = self.openai_model,
-            mode = 'embedding',
-            prompt_tokens = self.usage.prompt_tokens,
-            completion_tokens = self.usage.completion_tokens,
-            total_tokens = self.usage.total_tokens,
+            usage = self.usage,
         )
 
 
@@ -103,6 +103,8 @@ class EmbeddingRoute(BaseRoute):
     def create(
         self, 
         input_object: Optional[EmbeddingObject] = None,
+        auto_retry: Optional[bool] = False,
+        auto_retry_limit: Optional[int] = None,
         **kwargs
     ) -> EmbeddingResponse:
         """
@@ -129,12 +131,71 @@ class EmbeddingRoute(BaseRoute):
 
         Returns: `EmbeddingResponse`
         """
-        return super().create(input_object=input_object, **kwargs)
+        if self.is_azure and self.azure_model_mapping and kwargs.get('model') and kwargs['model'] in self.azure_model_mapping:
+            kwargs['model'] = self.azure_model_mapping[kwargs['model']]
+            kwargs['validate_model_aliases'] = False
+
+        current_attempt = kwargs.pop('_current_attempt', 0)
+        if not auto_retry:
+            return super().create(input_object=input_object, **kwargs)
+        
+        # Handle Auto Retry Logic
+        if not auto_retry_limit: auto_retry_limit = self.settings.max_retries
+        try:
+            return super().create(input_object = input_object, **kwargs)
+        except RateLimitError as e:
+            if current_attempt >= auto_retry_limit:
+                raise MaxRetriesExceeded(name = self.name, attempts = current_attempt, base_exception = e) from e
+            sleep_interval = e.retry_after_seconds * 1.5 if e.retry_after_seconds else 15.0
+            logger.warning(f'[{self.name}: {current_attempt}/{auto_retry_limit}] Rate Limit Error. Sleeping for {sleep_interval} seconds')
+            time.sleep(sleep_interval)
+            current_attempt += 1
+            return self.create(
+                input_object = input_object,
+                auto_retry = auto_retry,
+                auto_retry_limit = auto_retry_limit,
+                _current_attempt = current_attempt,
+                **kwargs
+            )
+
+        
+        except APIError as e:
+            if current_attempt >= auto_retry_limit:
+                raise MaxRetriesExceeded(name = self.name, attempts=current_attempt, base_exception = e) from e
+            logger.warning(f'[{self.name}: {current_attempt}/{auto_retry_limit}] API Error: {e}. Sleeping for 10 seconds')
+            time.sleep(10.0)
+            current_attempt += 1
+            return self.create(
+                input_object = input_object,
+                auto_retry = auto_retry,
+                auto_retry_limit = auto_retry_limit,
+                _current_attempt = current_attempt,
+                **kwargs
+            )
+        
+        except (InvalidMaxTokens, InvalidRequestError) as e:
+            raise e
+        
+        except Exception as e:
+            if current_attempt >= auto_retry_limit:
+                raise MaxRetriesExceeded(name = self.name, attempts = current_attempt, base_exception = e) from e
+            logger.warning(f'[{self.name}: {current_attempt}/{auto_retry_limit}] Unknown Error: {e}. Sleeping for 10 seconds')
+            time.sleep(10.0)
+            current_attempt += 1
+            return self.create(
+                input_object = input_object,
+                auto_retry = auto_retry,
+                auto_retry_limit = auto_retry_limit,
+                _current_attempt = current_attempt,
+                **kwargs
+            )
     
 
     async def async_create(
         self, 
         input_object: Optional[EmbeddingObject] = None,
+        auto_retry: Optional[bool] = False,
+        auto_retry_limit: Optional[int] = None,
         **kwargs
     ) -> EmbeddingResponse:
         """
@@ -159,4 +220,59 @@ class EmbeddingRoute(BaseRoute):
 
         Returns: `EmbeddingResponse`
         """
-        return await super().async_create(input_object=input_object, **kwargs)
+        if self.is_azure and self.azure_model_mapping and kwargs.get('model') and kwargs['model'] in self.azure_model_mapping:
+            kwargs['model'] = self.azure_model_mapping[kwargs['model']]
+            kwargs['validate_model_aliases'] = False
+
+        current_attempt = kwargs.pop('_current_attempt', 0)
+        if not auto_retry:
+            return await super().async_create(input_object = input_object, **kwargs)
+
+        # Handle Auto Retry Logic
+        if not auto_retry_limit: auto_retry_limit = self.settings.max_retries
+        try:
+            return await super().async_create(input_object = input_object, **kwargs)
+        except RateLimitError as e:
+            if current_attempt >= auto_retry_limit:
+                raise MaxRetriesExceeded(name = self.name, attempts = current_attempt, base_exception = e) from e
+            sleep_interval = e.retry_after_seconds * 1.5 if e.retry_after_seconds else 15.0
+            logger.warning(f'[{self.name}: {current_attempt}/{auto_retry_limit}] Rate Limit Error. Sleeping for {sleep_interval} seconds')
+            await asyncio.sleep(sleep_interval)
+            current_attempt += 1
+            return await self.async_create(
+                input_object = input_object,
+                auto_retry = auto_retry,
+                auto_retry_limit = auto_retry_limit,
+                _current_attempt = current_attempt,
+                **kwargs
+            )
+        except APIError as e:
+            if current_attempt >= auto_retry_limit:
+                raise MaxRetriesExceeded(name = self.name, attempts = current_attempt, base_exception = e) from e
+            logger.warning(f'[{self.name}: {current_attempt}/{auto_retry_limit}] API Error: {e}. Sleeping for 10 seconds')
+            await asyncio.sleep(10.0)
+            current_attempt += 1
+            return await self.async_create(
+                input_object = input_object,
+                auto_retry = auto_retry,
+                auto_retry_limit = auto_retry_limit,
+                _current_attempt = current_attempt,
+                **kwargs
+            )
+
+        except (InvalidMaxTokens, InvalidRequestError) as e:
+            raise e
+        
+        except Exception as e:
+            if current_attempt >= auto_retry_limit:
+                raise MaxRetriesExceeded(name = self.name, attempts = current_attempt, base_exception = e) from e
+            logger.warning(f'[{self.name}: {current_attempt}/{auto_retry_limit}] Unknown Error: {e}. Sleeping for 10 seconds')
+            await asyncio.sleep(10.0)
+            current_attempt += 1
+            return await self.async_create(
+                input_object = input_object,
+                auto_retry = auto_retry,
+                auto_retry_limit = auto_retry_limit,
+                _current_attempt = current_attempt,
+                **kwargs
+            )

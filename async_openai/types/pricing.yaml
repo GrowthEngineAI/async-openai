@@ -1,0 +1,138 @@
+# The OpenAI Pricing
+# https://openai.com/api/pricing/
+
+gpt-4-1106-preview:
+  aliases:
+  - gpt-4-turbo
+  context_length: 128000 # 131072 ?
+  costs:
+    unit: 1000
+    input: 0.01
+    output: 0.03
+  endpoints:
+  - chat
+
+gpt-4:
+  context_length: 8192
+  costs:
+    unit: 1000
+    input: 0.03
+    output: 0.06
+  endpoints:
+  - chat
+
+gpt-4-32k:
+  context_length: 32768
+  costs:
+    unit: 1000
+    input: 0.06
+    output: 0.12
+  endpoints:
+  - chat
+
+
+gpt-3.5-turbo:
+  aliases:
+  # - gpt-35
+  # - gpt-35-turbo
+  - gpt-3.5
+  # Support previous 16k context length
+  # - gpt-3.5-16k
+  # - gpt-35-16k
+  # - gpt-35-turbo-16k
+  # - gpt-3.5-turbo-16k
+  # - gpt-3.5-turbo-1106
+  # - gpt-35-turbo-1106
+  # - gpt-3.5-turbo-0301
+  # - gpt-35-turbo-0301
+  # - gpt-3.5-turbo-0613
+  # - gpt-35-turbo-0613
+  context_length: 16384
+  costs:
+    unit: 1000
+    input: 0.0010
+    output: 0.0020
+  endpoints:
+  - chat
+
+gpt-3.5-turbo-16k:
+  aliases:
+  # Support previous 16k context length
+  - gpt-3.5-16k
+  # - gpt-35-16k
+  # - gpt-35-turbo-16k
+  - gpt-3.5-turbo-16k
+  context_length: 16384
+  costs:
+    unit: 1000
+    input: 0.0010
+    output: 0.0020
+  endpoints:
+  - chat
+
+gpt-3.5-turbo-1106:
+  aliases:
+  - gpt-3.5-1106
+  # - gpt-35-1106
+  # - gpt-35-turbo-1106
+  context_length: 16384
+  costs:
+    unit: 1000
+    input: 0.0010
+    output: 0.0020
+  endpoints:
+  - chat
+
+gpt-3.5-turbo-0301:
+  aliases:
+  - gpt-3.5-0301
+  # - gpt-35-0301
+  # - gpt-35-turbo-0301
+  context_length: 16384
+  costs:
+    unit: 1000
+    input: 0.0010
+    output: 0.0020
+  endpoints:
+  - chat
+
+gpt-3.5-turbo-0613:
+  aliases:
+  - gpt-3.5-0613
+  # - gpt-35-0613
+  # - gpt-35-turbo-0613
+  context_length: 16384
+  costs:
+    unit: 1000
+    input: 0.0010
+    output: 0.0020
+  endpoints:
+  - chat
+
+gpt-3.5-turbo-instruct:
+  aliases:
+  - gpt-3.5-instruct
+  # - gpt-35-instruct
+  # - gpt-35-turbo-instruct
+  context_length: 4096
+  costs:
+    unit: 1000
+    input: 0.0015
+    output: 0.0020
+  endpoints:
+  - completion
+
+text-embedding-ada-002:
+  aliases:
+  - ada
+  - ada-v2
+  - text-embedding-ada
+  context_length: 8191
+  costs:
+    unit: 1000
+    input: 0.0001
+  endpoints:
+  - embeddings
+
+
+

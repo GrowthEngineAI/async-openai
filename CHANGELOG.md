@@ -1,5 +1,26 @@
 # Changelogs
 
+
+#### v0.0.41 (2023-11-06)
+
+**Update to Latest OpenAI API**
+
+This version updates the API to the latest version of OpenAI's API, which includes the following changes:
+
+- addition of `gpt-4-turbo` models
+
+- Add additional supported parameters to `chat` endpoint. We maintain v1 parameters for `azure` endpoints, but will pass through the new parameters for `openai` endpoints.
+
+- Add gradual support for `tools`
+
+**Updates**
+
+- Rework of validating `models`, which now is no longer done, and expects the user to pass the correct model name.
+
+- No longer supporting `validate_max_tokens` as there are now many different schemas for `max_tokens` depending on the model.
+
+
+
 #### v0.0.40 (2023-10-18)
 
 **Potentially Breaking Changes**
