@@ -62,6 +62,7 @@ async def run_test():
     logger.info(f'Result Usage: {result.usage}')
     
 
-
-asyncio.run(run_test())    
+logger.info(functions)
+logger.info(Weather.schema_json(indent=2))
+# asyncio.run(run_test())    
 

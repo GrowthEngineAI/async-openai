@@ -8,7 +8,7 @@ from typing import Optional, Type, Any, Union, List, Dict, Iterator, TypeVar, As
 from lazyops.types import validator, lazyproperty, Literal
 from lazyops.types.models import root_validator, pre_root_validator, Field, BaseModel, PYD_VERSION, get_pyd_schema
 
-from async_openai.types.costs import ModelCostHandler
+from async_openai.types.context import ModelContextHandler
 from async_openai.types.resources import BaseResource, Usage
 from async_openai.types.responses import BaseResponse
 from async_openai.types.routes import BaseRoute
@@ -196,9 +196,9 @@ class ChatObject(BaseResource):
             elif values.get('deployment'):
                 v = values.get('deployment')
         
-        v = ModelCostHandler.resolve_model_name(v)
+        v = ModelContextHandler.resolve_model_name(v)
         # if values.get('validate_model_aliases', False):
-        #     v = ModelCostHandler[v].name
+        #     v = ModelContextHandler[v].name
         return v
         
     
@@ -486,8 +486,8 @@ class ChatResponse(BaseResponse):
         if self.usage and self.usage.total_tokens and self.usage.prompt_tokens: return
         if self.response.status_code == 200:
             self.usage = Usage(
-                prompt_tokens = ModelCostHandler.count_chat_tokens(self.input_messages, model_name = self.openai_model),
-                completion_tokens = ModelCostHandler.count_chat_tokens(self.messages, model_name = self.openai_model),
+                prompt_tokens = ModelContextHandler.count_chat_tokens(self.input_messages, model_name = self.openai_model),
+                completion_tokens = ModelContextHandler.count_chat_tokens(self.messages, model_name = self.openai_model),
             )
             self.usage.total_tokens = self.usage.prompt_tokens + self.usage.completion_tokens
 
@@ -498,7 +498,7 @@ class ChatResponse(BaseResponse):
         Returns the consumption for the completions
         """ 
         self._validate_usage()
-        return ModelCostHandler.get_consumption_cost(
+        return ModelContextHandler.get_consumption_cost(
             model_name = self.openai_model,
             usage = self.usage,
         )
@@ -593,7 +593,7 @@ class ChatResponse(BaseResponse):
             else:
                 yield remaining_result
         if not self.usage.prompt_tokens:
-            self.usage.prompt_tokens = ModelCostHandler.count_chat_tokens(
+            self.usage.prompt_tokens = ModelContextHandler.count_chat_tokens(
                 messages = self.input_messages,
                 model_name = self.openai_model
             )
@@ -666,7 +666,7 @@ class ChatResponse(BaseResponse):
                 yield remaining_result
         
         if not self.usage.prompt_tokens:
-            self.usage.prompt_tokens = ModelCostHandler.count_chat_tokens(
+            self.usage.prompt_tokens = ModelContextHandler.count_chat_tokens(
                 messages = self.input_messages,
                 model_name = self.openai_model
             )

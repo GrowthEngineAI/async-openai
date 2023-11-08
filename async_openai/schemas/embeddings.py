@@ -3,7 +3,7 @@ import asyncio
 from typing import Optional, Type, Any, Union, List, Dict
 from lazyops.types import validator, lazyproperty
 
-from async_openai.types.costs import ModelCostHandler
+from async_openai.types.context import ModelContextHandler
 from async_openai.types.resources import BaseResource
 from async_openai.types.responses import BaseResponse
 from async_openai.types.routes import BaseRoute
@@ -39,9 +39,9 @@ class EmbeddingObject(BaseResource):
                 v = values.get('engine')
             elif values.get('deployment'):
                 v = values.get('deployment')
-        v = ModelCostHandler.resolve_model_name(v)
+        v = ModelContextHandler.resolve_model_name(v)
         # if values.get('validate_model_aliases', False):
-        #     v = ModelCostHandler[v].name
+        #     v = ModelContextHandler[v].name
         return v
     
 
@@ -80,7 +80,7 @@ class EmbeddingResponse(BaseResponse):
         """
         Returns the consumption for the completions
         """ 
-        return ModelCostHandler.get_consumption_cost(
+        return ModelContextHandler.get_consumption_cost(
             model_name = self.openai_model,
             usage = self.usage,
         )

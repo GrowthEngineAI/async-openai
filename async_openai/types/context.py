@@ -66,7 +66,7 @@ class ModelCostItem(BaseModel):
         
 
 
-class ModelCostHandlerMetaClass(type):
+class ModelContextHandlerMetaClass(type):
     """
     The Model Cost Handler
     """
@@ -197,9 +197,25 @@ class ModelCostHandlerMetaClass(type):
         """
         return cls.model_aliases.get(model_name, model_name)
     
+    def truncate_to_max_length(cls, text: str, model_name: str, context_length: Optional[int] = None, **kwargs) -> str:
+        """
+        Truncates the text to the max length
+        """
+        tokenizer = cls.get_tokenizer(model_name)
+        if context_length is None:
+            context_length = cls[model_name].context_length
+
+        tokens = tokenizer.encode(text)
+        if len(tokens) > context_length:
+            tokens = tokens[-context_length:]
+            decoded = tokenizer.decode(tokens)
+            text = text[-len(decoded):]
+        
+        return text
 
 
-class ModelCostHandler(metaclass = ModelCostHandlerMetaClass):
+
+class ModelContextHandler(metaclass = ModelContextHandlerMetaClass):
     """
     The Model Cost Handler
     """

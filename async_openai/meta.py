@@ -10,7 +10,7 @@ from typing import Optional, List, Callable, Dict, Union, overload, TYPE_CHECKIN
 
 from async_openai.schemas import *
 from async_openai.types.options import ApiType
-from async_openai.types.costs import ModelCostHandler
+from async_openai.types.context import ModelContextHandler
 from async_openai.utils.config import get_settings, OpenAISettings
 from async_openai.utils.logs import logger
 
@@ -521,7 +521,7 @@ class OpenAIMetaClass(type):
         if azure_model_mapping is not None: 
             cls.azure_model_mapping = azure_model_mapping
             for key, val in azure_model_mapping.items():
-                ModelCostHandler.add_model(key, val)
+                ModelContextHandler.add_model(key, val)
         cls.settings.configure(**kwargs)
     
     def configure_client(

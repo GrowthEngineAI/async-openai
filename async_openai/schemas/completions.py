@@ -8,7 +8,7 @@ from typing import Optional, Type, Any, Union, List, Dict, Iterator, AsyncIterat
 from lazyops.types import validator, lazyproperty
 from lazyops.types.models import root_validator, pre_root_validator, Field
 
-from async_openai.types.costs import ModelCostHandler
+from async_openai.types.context import ModelContextHandler
 from async_openai.types.resources import BaseResource, Usage
 from async_openai.types.responses import BaseResponse
 from async_openai.types.routes import BaseRoute
@@ -73,9 +73,9 @@ class CompletionObject(BaseResource):
                 v = values.get('engine')
             elif values.get('deployment'):
                 v = values.get('deployment')
-        v = ModelCostHandler.resolve_model_name(v)
+        v = ModelContextHandler.resolve_model_name(v)
         # if values.get('validate_model_aliases', False):
-        #     v = ModelCostHandler[v].name
+        #     v = ModelContextHandler[v].name
         return v
 
     
@@ -164,8 +164,8 @@ class CompletionResponse(BaseResponse):
         if self.usage and self.usage.total_tokens: return
         if self.response.status_code == 200:
             self.usage = Usage(
-                prompt_tokens = ModelCostHandler.count_tokens(self.input_object.prompt),
-                completion_tokens = ModelCostHandler.count_tokens(self.text),
+                prompt_tokens = ModelContextHandler.count_tokens(self.input_object.prompt),
+                completion_tokens = ModelContextHandler.count_tokens(self.text),
             )
             self.usage.total_tokens = self.usage.prompt_tokens + self.usage.completion_tokens
 
@@ -175,7 +175,7 @@ class CompletionResponse(BaseResponse):
         Returns the consumption for the completions
         """ 
         self._validate_usage()
-        return ModelCostHandler.get_consumption_cost(
+        return ModelContextHandler.get_consumption_cost(
             model_name = self.openai_model,
             usage = self.usage,
         )
