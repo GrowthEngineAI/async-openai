@@ -699,12 +699,24 @@ class ChatRoute(BaseRoute):
     def root_name(self):
         return 'chat'
     
+
+    def encode_data(self, data: Dict[str, Any]) -> str:
+        """
+        Encodes the data
+        """
+        # response_format isn't supported atm
+        if self.is_azure:
+            _ = data.pop('response_format', None)
+        return super().encode_data(data = data)
+        
+    
     def create(
         self, 
         input_object: Optional[ChatObject] = None,
         parse_stream: Optional[bool] = True,
         auto_retry: Optional[bool] = False,
         auto_retry_limit: Optional[int] = None,
+        header_cache_keys: Optional[List[str]] = None,
         **kwargs
     ) -> ChatResponse:
         """
@@ -845,6 +857,10 @@ class ChatRoute(BaseRoute):
             logger.warning(f'[{self.name}: {current_attempt}/{auto_retry_limit}] API Error: {e}. Sleeping for 10 seconds')
             time.sleep(10.0)
             current_attempt += 1
+            if header_cache_keys and kwargs.get('headers'):
+                headers = kwargs.pop('headers')
+                _ = [headers.pop(k) for k in header_cache_keys if k in headers]
+                kwargs['headers'] = headers
             return self.create(
                 input_object = input_object,
                 parse_stream = parse_stream,
@@ -863,6 +879,10 @@ class ChatRoute(BaseRoute):
             logger.warning(f'[{self.name}: {current_attempt}/{auto_retry_limit}] Unknown Error: {e}. Sleeping for 10 seconds')
             time.sleep(10.0)
             current_attempt += 1
+            if header_cache_keys and kwargs.get('headers'):
+                headers = kwargs.pop('headers')
+                _ = [headers.pop(k) for k in header_cache_keys if k in headers]
+                kwargs['headers'] = headers
             return self.create(
                 input_object = input_object,
                 parse_stream = parse_stream,
@@ -881,6 +901,7 @@ class ChatRoute(BaseRoute):
         parse_stream: Optional[bool] = True,
         auto_retry: Optional[bool] = False,
         auto_retry_limit: Optional[int] = None,
+        header_cache_keys: Optional[List[str]] = None,
         **kwargs
     ) -> ChatResponse:
         """
@@ -1019,6 +1040,10 @@ class ChatRoute(BaseRoute):
             logger.warning(f'[{self.name}: {current_attempt}/{auto_retry_limit}] API Error: {e}. Sleeping for 10 seconds')
             await asyncio.sleep(10.0)
             current_attempt += 1
+            if header_cache_keys and kwargs.get('headers'):
+                headers = kwargs.pop('headers')
+                _ = [headers.pop(k) for k in header_cache_keys if k in headers]
+                kwargs['headers'] = headers
             return await self.async_create(
                 input_object = input_object,
                 parse_stream = parse_stream,
@@ -1037,6 +1062,10 @@ class ChatRoute(BaseRoute):
             logger.warning(f'[{self.name}: {current_attempt}/{auto_retry_limit}] Unknown Error: {e}. Sleeping for 10 seconds')
             await asyncio.sleep(10.0)
             current_attempt += 1
+            if header_cache_keys and kwargs.get('headers'):
+                headers = kwargs.pop('headers')
+                _ = [headers.pop(k) for k in header_cache_keys if k in headers]
+                kwargs['headers'] = headers
             return await self.async_create(
                 input_object = input_object,
                 parse_stream = parse_stream,
