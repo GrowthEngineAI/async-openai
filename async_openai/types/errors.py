@@ -1,5 +1,6 @@
 
 import json
+import httpx
 import aiohttpx
 import contextlib
 from typing import Any, Optional, Union, Dict
@@ -87,11 +88,12 @@ class ExceptionModel(BaseModel):
     
     @lazyproperty
     def error_message(self) -> str:
-        msg = self.message or ("(Error occurred while streaming.)" if self.stream else "")
-        msg += " " + self.error_data.get("message", "")
+        msg: str = self.message or ("(Error occurred while streaming.)" if self.stream else "")
+        if self.error_data.get("message"):
+            msg += " " + self.error_data.get("message")
         if self.error_data.get("internal_message"):
             msg += "\n\n" + self.error_data["internal_message"]
-        return msg
+        return msg.strip() or self.response_text
 
 
 class OpenAIError(Exception):
@@ -175,6 +177,8 @@ class RateLimitError(OpenAIError):
         with contextlib.suppress(Exception):
             self.retry_after_seconds = float(self.exc.error_message.split("Please retry after", 1)[1].split("second", 1)[0].strip())
 
+class ServiceTimeoutError(OpenAIError):
+    pass
 
 
 class ServiceUnavailableError(OpenAIError):
@@ -199,10 +203,15 @@ class InvalidMaxTokens(InvalidRequestError):
             self.requested_max_tokens = int(self.exc.error_message.split("requested", 1)[1].split(" ", 1)[0].strip())
 
 
-def fatal_exception(exc):
+def fatal_exception(exc) -> bool:
     """
     Checks if the exception is fatal.
     """
+    print(f"Checking if exception is fatal: {exc} ({type(exc)} = ({type(exc) == aiohttpx.ReadTimeout} is readtimeout)) ")
+
+    if isinstance(exc, aiohttpx.ReadTimeout) or type(exc) == aiohttpx.ReadTimeout:
+        return True
+    
     if not isinstance(exc, OpenAIError):
         # retry on all other errors (eg. network)
         return False
@@ -215,7 +224,7 @@ def fatal_exception(exc):
     if isinstance(exc, (InvalidMaxTokens, InvalidRequestError)):
         return True
     
-    return (400 <= exc.status < 500) and exc.status not in [429, 400, 404, 415] # [429, 400, 404, 415]
+    return (400 <= exc.status < 500) and exc.status not in [429, 400, 404, 415, 524] # [429, 400, 404, 415]
 
 
 def error_handler(
@@ -273,6 +282,15 @@ def error_handler(
             response = response,
             data = data,
             should_retry = should_retry,
+            **kwargs
+        )
+    
+    # Service is likely down.
+    if response.status_code == 524:
+        raise ServiceTimeoutError(
+            response = response,
+            data = data,
+            should_retry = False,
             **kwargs
         )
     

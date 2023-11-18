@@ -157,6 +157,7 @@ class BaseRoute(BaseModel):
         input_object: Optional[Type[BaseResource]] = None,
         headers: Optional[Dict[str, str]] = None,
         parse_stream: Optional[bool] = True,
+        timeout: Optional[int] = None,
         **kwargs
     ):
         """
@@ -179,7 +180,7 @@ class BaseRoute(BaseModel):
             url = self.get_resource_url(data = data, **kwargs),
             data = self.encode_data(data),
             headers = headers,
-            timeout = self.timeout,
+            timeout = timeout if timeout is not None else self.timeout,
             stream = input_object.get('stream'),
             **kwargs
         )
@@ -192,6 +193,7 @@ class BaseRoute(BaseModel):
         input_object: Optional[Type[BaseResource]] = None,
         headers: Optional[Dict[str, str]] = None,
         parse_stream: Optional[bool] = True,
+        timeout: Optional[int] = None,
         **kwargs
     ):
         """
@@ -214,7 +216,7 @@ class BaseRoute(BaseModel):
             url = self.get_resource_url(data = data, **kwargs),
             data = self.encode_data(data),
             headers = headers,
-            timeout = self.timeout,
+            timeout = timeout if timeout is not None else self.timeout,
             stream = input_object.get('stream'),
             **kwargs
         )
