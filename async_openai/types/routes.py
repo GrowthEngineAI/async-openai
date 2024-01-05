@@ -945,7 +945,7 @@ class BaseRoute(BaseModel):
         """
         
         if timeout is None: timeout = self.timeout
-        if self.debug_enabled: logger.info(f'[{self.name} - {method} - {url}] headers: {headers}, params: {params}, data: {data}')
+        # if self.debug_enabled: logger.info(f'[{self.name} - {method} - {url}] headers: {headers}, params: {params}, data: {data}')
         request = await self.client.async_build_request(
             method = method,
             url = url,
@@ -955,6 +955,7 @@ class BaseRoute(BaseModel):
             timeout = timeout,
             **kwargs
         )
+        if self.debug_enabled: logger.info(f'[{self.name} - {method} - {url}] headers: {request.headers}, params: {params}, data: {data}')
         request_func = self.client.async_send
         if self.retry_function is not None:
             request_func = self.retry_function(request_func)

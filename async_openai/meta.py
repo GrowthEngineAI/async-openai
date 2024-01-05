@@ -206,6 +206,7 @@ DefaultModelMapping = {
     'gpt-3.5-turbo-instruct': 'gpt-35-turbo-instruct',
     'gpt-3.5-turbo-0301': 'gpt-35-turbo-0301',
     'gpt-3.5-turbo-0613': 'gpt-35-turbo-0613',
+    'gpt-3.5-turbo-1106': 'gpt-35-turbo-1106',
 }
     
 class OpenAIMetaClass(type):
