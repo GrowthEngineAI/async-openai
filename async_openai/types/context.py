@@ -156,9 +156,13 @@ class ModelContextHandlerMetaClass(type):
         Gets the tokenizer
         """
         # Switch the 35 -> 3.5
-        if '35' in name: name = name.replace('35', '3.5')
+        if '35' in name: name = name.replace('35', '3.5')    
         if name not in cls.tokenizers:
-            cls.tokenizers[name] = tiktoken.encoding_for_model(name)
+            if name in {'text-embedding-3-small', 'text-embedding-3-large'}:
+                enc_name = 'cl100k_base'
+                cls.tokenizers[name] = tiktoken.get_encoding(enc_name)
+            else:
+                cls.tokenizers[name] = tiktoken.encoding_for_model(name)
         return cls.tokenizers[name]
     
     def count_chat_tokens(

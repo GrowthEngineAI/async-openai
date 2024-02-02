@@ -62,6 +62,7 @@ class OpenAIManager(abc.ABC):
         self.no_proxy_client_names: Optional[List[str]] = []
         self.client_callbacks: Optional[List[Callable]] = []
         self.functions: FunctionManager = OpenAIFunctions
+        self.ctx = ModelContextHandler
         if self.auto_loadbalance_clients is None: self.auto_loadbalance_clients = self.settings.auto_loadbalance_clients
         if self.auto_healthcheck is None: self.auto_healthcheck = self.settings.auto_healthcheck
 
@@ -1091,10 +1092,10 @@ class OpenAIManager(abc.ABC):
             model = model, 
             **kwargs
         )
-        if strip_newlines: inputs = [i.replace('\n', ' ') for i in inputs]
+        if strip_newlines: inputs = [i.replace('\n', ' ').strip() for i in inputs]
         client = self.get_client(model = model, **kwargs)
         if not client.is_azure:
-            response = client.embeddings.create(input = inputs, auto_retry = auto_retry, **kwargs)
+            response = client.embeddings.create(input = inputs, model = model, auto_retry = auto_retry, **kwargs)
             return response.embeddings
 
         embeddings = []
@@ -1102,7 +1103,7 @@ class OpenAIManager(abc.ABC):
         # Azure has a limit of 5 inputs per request
         batches = split_into_batches(inputs, 5)
         for batch in batches:
-            response = client.embeddings.create(input = batch, auto_retry = auto_retry, **kwargs)
+            response = client.embeddings.create(input = batch, model = model, auto_retry = auto_retry, **kwargs)
             embeddings.extend(response.embeddings)
             # Shuffle the clients to load balance
             client = self.get_client(model = model, azure_required = True, **kwargs)
@@ -1134,10 +1135,10 @@ class OpenAIManager(abc.ABC):
             model = model, 
             **kwargs
         )
-        if strip_newlines: inputs = [i.replace('\n', ' ') for i in inputs]
+        if strip_newlines: inputs = [i.replace('\n', ' ').strip() for i in inputs]
         client = self.get_client(model = model, **kwargs)
         if not client.is_azure:
-            response = await client.embeddings.async_create(input = inputs, auto_retry = auto_retry, **kwargs)
+            response = await client.embeddings.async_create(input = inputs, model = model, auto_retry = auto_retry, **kwargs)
             return response.embeddings
 
         embeddings = []
@@ -1145,7 +1146,7 @@ class OpenAIManager(abc.ABC):
         # Azure has a limit of 5 inputs per request
         batches = split_into_batches(inputs, 5)
         for batch in batches:
-            response = await client.embeddings.async_create(input = batch, auto_retry = auto_retry, **kwargs)
+            response = await client.embeddings.async_create(input = batch, model = model, auto_retry = auto_retry, **kwargs)
             embeddings.extend(response.embeddings)
             # Shuffle the clients to load balance
             client = self.get_client(model = model, azure_required = True, **kwargs)

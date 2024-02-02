@@ -5,6 +5,7 @@ OpenAI Functions Base Class
 """
 
 import jinja2
+import functools
 from abc import ABC
 from pydantic import PrivateAttr, BaseModel
 # from lazyops.types import BaseModel
@@ -13,10 +14,11 @@ from lazyops.libs.proxyobj import ProxyObject
 from async_openai.utils.fixjson import resolve_json
 from . import errors
 
-from typing import Optional, Any, Dict, List, Union, Type, Tuple, Awaitable, TypeVar, TYPE_CHECKING
+from typing import Optional, Any, Dict, List, Union, Type, Tuple, Awaitable, Generator, AsyncGenerator, TypeVar, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from async_openai import ChatResponse, ChatRoute
+    from async_openai.types.resources import Usage
     from async_openai.manager import OpenAIManager as OpenAISessionManager
     from lazyops.utils.logs import Logger
     from lazyops.libs.persistence import PersistentDict
@@ -28,6 +30,10 @@ SchemaT = TypeVar('SchemaT', bound = BaseModel)
 
 class BaseFunctionModel(BaseModel):
     _name: Optional[str] = PrivateAttr(None)
+    if TYPE_CHECKING:
+        usage: Optional[Usage]
+    else:
+        usage: Optional[Any] = None
 
     def update(
         self,
@@ -106,6 +112,15 @@ class BaseFunction(ABC):
     default_model_local: Optional[str] = None
     default_model_develop: Optional[str] = None
     default_model_production: Optional[str] = None
+
+    auto_register_function: Optional[bool] = True
+
+    def __init_subclass__(cls, **kwargs):
+        """
+        Subclass Hook
+        """
+        if cls.auto_register_function:
+            OpenAIFunctions.register_function(cls, initialize = False)
 
 
     def __init__(
@@ -431,7 +446,7 @@ class BaseFunction(ABC):
         response: 'ChatResponse',
         schema: Optional[Type[FunctionSchemaT]] = None,
         include_name: Optional[bool] = True,
-    ) -> Optional[FunctionSchemaT]:
+    ) -> Optional[FunctionSchemaT]:  # sourcery skip: extract-duplicate-method
         """
         Parses the response
         """
@@ -440,6 +455,7 @@ class BaseFunction(ABC):
             result = schema.model_validate(response.function_results[0].arguments, from_attributes = True)
             if include_name:
                 result._name = self.name
+            result.usage = response.usage
             return result
         except Exception as e:
             self.autologger.error(f"[{self.name} - {response.model} - {response.usage}] Failed to parse object: {e}\n{response.text}\n{response.function_results[0].arguments}")
@@ -447,6 +463,7 @@ class BaseFunction(ABC):
                 result = schema.model_validate(resolve_json(response.function_results[0].arguments), from_attributes = True)
                 if include_name:
                     result._name = self.name
+                result.usage = response.usage
                 return result
             except Exception as e:
                 self.autologger.error(f"[{self.name} - {response.model} - {response.usage}] Failed to parse object after fixing")
@@ -624,7 +641,12 @@ class BaseFunction(ABC):
             if result is not None: return result
             attempts += 1
         self.autologger.error(f"Unable to parse the response for {self.name} after {self.max_attempts} attempts.")
-        if raise_errors: raise errors.MaxRetriesExhausted(name = self.name, attempts = self.max_attempts)
+        if raise_errors: raise errors.MaxRetriesExhausted(
+            name = self.name, 
+            func_name = self.name,
+            model = model,
+            attempts = self.max_attempts,
+        )
         return None
 
     async def arun_function_loop(
@@ -663,7 +685,12 @@ class BaseFunction(ABC):
             if result is not None: return result
             attempts += 1
         self.autologger.error(f"Unable to parse the response for {self.name} after {self.max_attempts} attempts.")
-        if raise_errors: raise errors.MaxRetriesExhausted(name = self.name, attempts = self.max_attempts)
+        if raise_errors: raise errors.MaxRetriesExhausted(
+            name = self.name, 
+            func_name = self.name,
+            model = model,
+            attempts = self.max_attempts,
+        )
         return None
 
     
@@ -760,6 +787,7 @@ class FunctionManager(ABC):
         name: Optional[str] = None,
         overwrite: Optional[bool] = False,
         raise_error: Optional[bool] = False,
+        initialize: Optional[bool] = True,
         **kwargs,
     ):
         """
@@ -768,7 +796,7 @@ class FunctionManager(ABC):
         if isinstance(func, str):
             from lazyops.utils.lazy import lazy_import
             func = lazy_import(func)
-        if isinstance(func, type):
+        if isinstance(func, type) and initialize:
             func = func(**kwargs)
         name = name or func.name
         if not overwrite and name in self.functions:
@@ -789,11 +817,23 @@ class FunctionManager(ABC):
         """
         return await self.api.pooler.asyncish(self.create_hash, **kwargs)
     
+    def _get_function(self, name: str) -> Optional[BaseFunction]:
+        """
+        Gets the function
+        """
+        func = self.functions.get(name)
+        if not func: return None
+        if isinstance(func, type):
+            func = func(**self._kwargs)
+            self.functions[name] = func
+        return func
+
     def get(self, name: Union[str, 'FunctionT']) -> Optional['FunctionT']:
         """
         Gets the function
         """
-        return name if isinstance(name, BaseFunction) else self.functions.get(name)
+        return name if isinstance(name, BaseFunction) else self._get_function(name)
+        
     
     def execute(
         self,
@@ -918,6 +958,96 @@ class FunctionManager(ABC):
                 return True
         return False
     
+    def map(
+        self,
+        function: Union['FunctionT', str],
+        iterable_kwargs: List[Dict[str, Any]],
+        *args,
+        cachable: Optional[bool] = True,
+        overrides: Optional[List[str]] = None,
+        return_ordered: Optional[bool] = True,
+        **function_kwargs
+    ) -> List[Optional['FunctionSchemaT']]:
+        """
+        Maps the function to the iterable in parallel
+        """
+        partial = functools.partial(
+            self.execute, 
+            function, 
+            cachable = cachable, 
+            overrides = overrides, 
+            **function_kwargs
+        )
+        return self.api.pooler.map(partial, iterable_kwargs, *args, return_ordered = return_ordered)
+    
+    async def amap(
+        self,
+        function: Union['FunctionT', str],
+        iterable_kwargs: List[Dict[str, Any]],
+        *args,
+        cachable: Optional[bool] = True,
+        overrides: Optional[List[str]] = None,
+        return_ordered: Optional[bool] = True,
+        concurrency_limit: Optional[int] = None,
+        **function_kwargs
+    ) -> List[Optional['FunctionSchemaT']]:
+        """
+        Maps the function to the iterable in parallel
+        """
+        partial = functools.partial(
+            self.aexecute, 
+            function, 
+            cachable = cachable, 
+            overrides = overrides, 
+            **function_kwargs
+        )
+        return await self.api.pooler.amap(partial, iterable_kwargs, *args, return_ordered = return_ordered, concurrency_limit = concurrency_limit)
+    
+    def iterate(
+        self,
+        function: Union['FunctionT', str],
+        iterable_kwargs: List[Dict[str, Any]],
+        *args,
+        cachable: Optional[bool] = True,
+        overrides: Optional[List[str]] = None,
+        return_ordered: Optional[bool] = False,
+        **function_kwargs
+    ) -> Generator[Optional['FunctionSchemaT'], None, None]:
+        """
+        Maps the function to the iterable in parallel
+        """
+        partial = functools.partial(
+            self.execute, 
+            function, 
+            cachable = cachable, 
+            overrides = overrides, 
+            **function_kwargs
+        )
+        return self.api.pooler.iterate(partial, iterable_kwargs, *args, return_ordered = return_ordered)
+
+    def aiterate(
+        self,
+        function: Union['FunctionT', str],
+        iterable_kwargs: List[Dict[str, Any]],
+        *args,
+        cachable: Optional[bool] = True,
+        overrides: Optional[List[str]] = None,
+        return_ordered: Optional[bool] = False,
+        concurrency_limit: Optional[int] = None,
+        **function_kwargs
+    ) -> AsyncGenerator[Optional['FunctionSchemaT'], None]:
+        """
+        Maps the function to the iterable in parallel
+        """
+        partial = functools.partial(
+            self.aexecute, 
+            function, 
+            cachable = cachable, 
+            overrides = overrides, 
+            **function_kwargs
+        )
+        return self.api.pooler.aiterate(partial, iterable_kwargs, *args, return_ordered = return_ordered, concurrency_limit = concurrency_limit)
+    
     def __call__(
         self,
         function: Union['FunctionT', str],
@@ -940,6 +1070,9 @@ class FunctionManager(ABC):
             overrides = overrides,
             **function_kwargs
         )
+    
+
+
 
 
 OpenAIFunctions: FunctionManager = ProxyObject(FunctionManager)

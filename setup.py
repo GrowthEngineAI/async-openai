@@ -26,6 +26,8 @@ if sys.version_info.minor < 8:
     requirements.append('typing_extensions')
 
 extras = {
+    'cache': ['kvdb'], # Adds caching support
+    'utils': ['numpy', 'scipy'] # Adds embedding utility support
 }
 
 args = {
