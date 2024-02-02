@@ -1,13 +1,14 @@
 import aiohttpx
+import contextlib
 from typing import Optional, Callable, Dict, Union, List
 
 from async_openai.schemas import *
 from async_openai.types.options import ApiType
 from async_openai.utils.logs import logger
-from async_openai.utils.config import get_settings, OpenAISettings, AzureOpenAISettings, OpenAIAuth
+from async_openai.utils.config import get_settings, OpenAISettings, AzureOpenAISettings, OpenAIAuth, ProxyObject
 from async_openai.routes import ApiRoutes
 from async_openai.meta import OpenAIMetaClass
-
+from async_openai.manager import OpenAIManager as OpenAISessionManager
 
 _update_params = [
     'url',
@@ -72,7 +73,41 @@ class OpenAIClient:
         """
         Lazily Instantiates the OpenAI Client
         """
+        self.model_rate_limits: Dict[str, Dict[str, int]] = {}
+        self.client_callbacks: List[Callable] = []
         self.configure_params(**kwargs)
+
+    def response_event_hook(self, response: aiohttpx.Response):
+        """
+        Monitor the rate limits
+        """
+        url = response.url
+        headers = response.headers
+        with contextlib.suppress(Exception):
+            if self.is_azure:
+                model_name = str(url).split('deployments/', 1)[-1].split('/', 1)[0].strip()
+            else:
+                model_name = headers.get('openai-model')
+            model_name = model_name.lstrip("https:").strip()
+            if not model_name: return
+            if model_name not in self.model_rate_limits:
+                self.model_rate_limits[model_name] = {}
+            for key, value in {
+                'x-ratelimit-remaining-requests': 'remaining',
+                'x-ratelimit-remaining-tokens': 'remaining_tokens',
+                'x-ratelimit-limit-tokens': 'limit_tokens',
+                'x-ratelimit-limit-requests': 'limit_requests',
+            }.items():
+                if key in headers:
+                    self.model_rate_limits[model_name][value] = int(headers[key])
+            if self.debug_enabled:
+                logger.info(f"Rate Limits: {self.model_rate_limits}")
+    
+    async def aresponse_event_hook(self, response: aiohttpx.Response):
+        """
+        Monitor the rate limits
+        """
+        return self.response_event_hook(response)
 
     @property
     def client(self) -> aiohttpx.Client:
@@ -121,6 +156,7 @@ class OpenAIClient:
         is_azure: Optional[bool] = None,
         azure_model_mapping: Optional[Dict[str, str]] = None,
         auth: Optional[OpenAIAuth] = None,
+        client_callbacks: Optional[List[Callable]] = None,
         **kwargs
     ):  # sourcery skip: low-code-quality
         """
@@ -233,6 +269,9 @@ class OpenAIClient:
         self.log_method = logger.info if self.debug_enabled else logger.debug
         if not self.debug_enabled:
             self.settings.disable_httpx_logger()
+        
+        if client_callbacks is not None:
+            self.client_callbacks = client_callbacks
         # if self.debug_enabled:
         #     logger.info(f"OpenAI Client Configured: {self.client.base_url}")
         #     logger.debug(f"Debug Enabled: {self.debug_enabled}")
@@ -243,13 +282,18 @@ class OpenAIClient:
         """
         if self._client is not None: return
         # logger.info(f"OpenAI Client Configured: {self.base_url} [{self.name}]")
+        extra_kwargs = {}
+        if self.settings.limit_monitor_enabled:
+            extra_kwargs['event_hooks'] = {'response': [self.response_event_hook]}
+            extra_kwargs['async_event_hooks'] = {'response': [self.aresponse_event_hook]}
+
         self._client = aiohttpx.Client(
             base_url = self.base_url,
             timeout = self.timeout,
             limits = self.settings.api_client_limits,
             auth = self.auth,
             headers = self.headers,
-            # auth = self.settings.
+            **extra_kwargs,
         )
 
     def configure_routes(self, **kwargs):
@@ -273,6 +317,7 @@ class OpenAIClient:
             azure_model_mapping = self.azure_model_mapping,
             disable_retries = self.disable_retries,
             retry_function = self.retry_function,
+            client_callbacks = self.client_callbacks,
             **kwargs
         )
         if self.debug_enabled:
@@ -369,11 +414,42 @@ class OpenAIClient:
         await self.async_close()
 
 
+    def ping(self, timeout: Optional[float] = 1.0) -> bool:
+        """
+        Pings the API Endpoint to check if it's alive.
+        """
+        try:
+        # with contextlib.suppress(Exception):
+            response = self.client.get('/', timeout = timeout)
+            data = response.json()
+            # we should expect a 404 with a json response
+            # if self.debug_enabled: logger.info(f"API Ping: {data}\n{response.headers}")
+            if data.get('error'): return True
+        except Exception as e:
+            logger.error(f"API Ping Failed: {e}")
+        return False
+    
+    async def aping(self, timeout: Optional[float] = 1.0) -> bool:
+        """
+        Pings the API Endpoint to check if it's alive.
+        """
+        with contextlib.suppress(Exception):
+            response = await self.client.async_get('/', timeout = timeout)
+            data = response.json()
+            # we should expect a 404 with a json response
+            if data.get('error'): return True
+        return False
+
+
 class OpenAI(metaclass = OpenAIMetaClass):
     """
-    Interface for OpenAI
+    [V1] Interface for OpenAI
+
+    Deprecating this class in future versions
     """
     pass
+
+OpenAIManager: OpenAISessionManager = ProxyObject(OpenAISessionManager)
 
 
 

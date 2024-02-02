@@ -101,10 +101,25 @@ class ModelContextHandlerMetaClass(type):
             cls._model_aliases = {alias: model for model, item in cls.models.items() for alias in item.aliases or []}
         return cls._model_aliases
     
+    def resolve_model_name(cls, model_name: str) -> str:
+        """
+        Resolves the Model Name from the model aliases
+        """
+        # Try to remove the version number
+        key = model_name.rsplit('-', 1)[0].strip()
+        if key in cls.model_aliases:
+            cls.model_aliases[model_name] = cls.model_aliases[key]
+        if key in cls.models:
+            cls.model_aliases[model_name] = key
+            return key
+        raise KeyError(f"Model {model_name} not found")
+    
     def __getitem__(cls, key: str) -> ModelCostItem:
         """
         Gets a model by name
         """
+        if key not in cls.model_aliases and key not in cls.models:
+            return cls.resolve_model_name(key)
         if key in cls.model_aliases:
             key = cls.model_aliases[key]
         return cls.models[key]

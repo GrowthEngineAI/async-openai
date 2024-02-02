@@ -2,8 +2,11 @@ import json
 import logging
 import pathlib
 import aiohttpx
+import contextlib
 from typing import Optional, Dict, Union, Any
 from lazyops.types import BaseSettings, validator, BaseModel, lazyproperty, Field
+from lazyops.libs.proxyobj import ProxyObject
+from lazyops.libs.abcs.configs.types import AppEnv
 from async_openai.version import VERSION
 from async_openai.types.options import ApiType
 
@@ -118,6 +121,7 @@ class BaseOpenAISettings(BaseSettings):
     keepalive_expiry: Optional[int] = 60
 
     custom_headers: Optional[Dict[str, str]] = None
+    limit_monitor_enabled: Optional[bool] = True
 
     @validator("api_type")
     def validate_api_type(cls, v):
@@ -420,7 +424,7 @@ class AzureOpenAISettings(BaseOpenAISettings):
     """
 
     api_type: Optional[ApiType] = ApiType.azure
-    api_version: Optional[str] = "2023-07-01-preview"
+    api_version: Optional[str] = "2023-12-01-preview"
     api_path: Optional[str] = None
 
     class Config:
@@ -437,14 +441,169 @@ class AzureOpenAISettings(BaseOpenAISettings):
         )
 
 
+
+class OpenAIProxySettings(BaseSettings):
+
+    proxy_enabled: Optional[bool] = None
+    proxy_endpoint: Optional[str] = None
+
+    proxy_name: Optional[str] = None
+    proxy_kind: Optional[str] = 'helicone'
+    proxy_env_name: Optional[str] = None
+    proxy_app_name: Optional[str] = None
+    proxy_endpoints: Optional[Dict[str, str]] = Field(default_factory = dict)
+    proxy_apikeys: Optional[Dict[str, str]] = Field(default_factory = dict)
+
+    @property
+    def endpoint(self) -> Optional[str]:
+        """
+        Returns the Proxy Endpoint
+        """
+        return self.proxy_endpoint
+    
+    @property
+    def enabled(self) -> Optional[bool]:
+        """
+        Returns whether the proxy is enabled
+        """
+        return self.proxy_enabled
+
+    def get_proxy_endpoint(self) -> Optional[str]:
+        """
+        Returns the proxy endpoint
+        """
+        if self.proxy_name and self.proxy_endpoints.get(self.proxy_name):
+            return self.proxy_endpoints[self.proxy_name]
+        for name, endpoint in self.proxy_endpoints.items():
+            with contextlib.suppress(Exception):
+                resp = aiohttpx.get(endpoint, timeout = 2.0)
+                # data = resp.json()
+                # if data.get('error'):
+                self.proxy_name = name
+                return endpoint
+        return None
+
+    def init(self, config_path: Optional[pathlib.Path] = None):
+        """
+        Initializes the core settings
+        """
+        if config_path: self.load_proxy_config(config_path)
+        if self.proxy_endpoint is None: 
+            self.proxy_endpoint = self.get_proxy_endpoint()
+            self.proxy_enabled = self.proxy_endpoint is not None
+
+    def get_apikey(
+        self, source: Optional[str] = None, 
+    ) -> str:
+        """
+        Gets the appropriate API Key for the proxy
+        """
+        if source:
+            source = source.lower()
+            for k, v in self.proxy_apikeys.items():
+                if k in source: return v
+        return self.proxy_apikeys.get('default', None)
+    
+    def load_proxy_config(
+        self,
+        path: pathlib.Path,
+    ):
+        """
+        Loads the Proxy Configuration from a File
+        """
+        if not path.exists(): return
+        data: Dict[str, Union[Dict[str, str], str]] = json.loads(path.read_text())
+        for k, v in data.items():
+            if v is None: continue
+            if k in {'endpoint', 'enabled'}: k = f'proxy_{k}'
+            if hasattr(self, k): setattr(self, k, v)
+            elif hasattr(self, f'proxy_{k}'): setattr(self, f'proxy_{k}', v)
+        self.proxy_endpoint = None
+        self.proxy_enabled = None
+
+    def update(
+        self,
+        **kwargs
+    ) -> None:
+        """
+        Updates the Proxy Settings
+        """
+        for k, v in kwargs.items():
+            if v is None: continue
+            if k in {'endpoint', 'enabled'}: k = f'proxy_{k}'
+            if hasattr(self, k): setattr(self, k, v)
+            elif hasattr(self, f'proxy_{k}'): setattr(self, f'proxy_{k}', v)
+        self.proxy_endpoint = None
+        self.proxy_enabled = None
+
+
+    def create_proxy_headers_for_helicone(
+        self,
+        name: str,
+        config: Dict[str, Any],
+        **properties: Dict[str, str],
+    ) -> Dict[str, Any]:
+        """
+        Creates the Proxy Headers for Helicone
+        """
+        headers = {
+            'Helicone-OpenAI-Api-Base': config.get('api_base', ''),
+            'Helicone-Auth': f"Bearer {self.get_apikey(self.proxy_app_name)}",
+            "Helicone-Property-ClientName": name,
+            'Content-Type': 'application/json',
+        }
+        user_id = ''
+        if self.proxy_app_name:
+            headers['Helicone-Property-AppName'] = self.proxy_app_name
+            user_id += self.proxy_app_name
+        if self.proxy_env_name:
+            headers['Helicone-Property-AppEnvironment'] = self.proxy_env_name
+            if user_id: user_id += f'-{self.proxy_env_name}'
+        if user_id: headers['Helicone-User-Id'] = user_id
+        if 'properties' in config: properties = config.pop('properties')
+        if properties:
+            for k, v in properties.items():
+                if 'Helicone-Property-' not in k: k = f'Helicone-Property-{k}'
+                headers[k] = str(v)
+        return headers
+
+    def create_proxy_headers(
+        self,
+        name: str,
+        config: Dict[str, Any],
+        kind: Optional[str] = None,
+        **properties: Dict[str, str],
+    ) -> Dict[str, Any]:
+        """
+        Creates the Proxy Headers
+        """
+        if kind is None: kind = self.proxy_kind
+        if kind == 'helicone':
+            return self.create_proxy_headers_for_helicone(name, config, **properties)
+        raise ValueError(f"Unsupported Proxy Kind: {kind}")
+        
+    class Config:
+        # We use a different prefix here to avoid conflicts
+        env_prefix = "OAI_"
+        case_sensitive = False
+
+
 class OpenAISettings(BaseOpenAISettings):
     """
     The OpenAI Settings
     """
 
+    app_env: Optional[AppEnv] = None
+    client_configurations: Optional[Dict[str, Dict[str, Any]]] = Field(default_factory = dict)
+    auto_loadbalance_clients: Optional[bool] = True
+    auto_healthcheck: Optional[bool] = True
+
+    function_cache_enabled: Optional[bool] = True
+    
     class Config:
         env_prefix = 'OPENAI_'
         case_sensitive = False
+
 
     @lazyproperty
     def azure(self) -> AzureOpenAISettings:
@@ -453,6 +612,13 @@ class OpenAISettings(BaseOpenAISettings):
         """
         return AzureOpenAISettings()
     
+    @lazyproperty
+    def proxy(self) -> OpenAIProxySettings:
+        """
+        Return the Proxy Settings
+        """
+        return OpenAIProxySettings()
+    
     @property
     def has_valid_azure(self) -> bool:
         """
@@ -460,9 +626,25 @@ class OpenAISettings(BaseOpenAISettings):
         """
         return self.azure.is_valid
 
+    def load_client_configurations(
+        self,
+        path: pathlib.Path,
+    ):
+        """
+        Loads the Client Configurations
+        """
+        if not path.exists(): return
+        data: Dict[str, Dict[str, Any]] = json.loads(path.read_text())
+        self.client_configurations.update(data)
 
     def configure(
         self, 
+        auto_healthcheck: Optional[bool] = None,
+        auto_loadbalance_clients: Optional[bool] = None,
+        proxy_app_name: Optional[str] = None,
+        proxy_env_name: Optional[str] = None,
+        proxy_config: Optional[Union[Dict[str, Any], pathlib.Path]] = None,
+        client_configurations: Optional[Union[Dict[str, Dict[str, Any]], pathlib.Path]] = None,
         **kwargs
     ):
         """
@@ -494,6 +676,19 @@ class OpenAISettings(BaseOpenAISettings):
         :param max_retries: The OpenAI Max Retries  | Env: [`OPENAI_MAX_RETRIES`]
         :param kwargs: Additional Keyword Arguments
         """
+        if auto_healthcheck is not None: self.auto_healthcheck = auto_healthcheck
+        if auto_loadbalance_clients is not None: self.auto_loadbalance_clients = auto_loadbalance_clients
+        if proxy_config:
+            if isinstance(proxy_config, pathlib.Path):
+                self.proxy.load_proxy_config(proxy_config)
+            else: self.proxy.update(**proxy_config)
+            self.proxy.init()
+        if proxy_app_name: self.proxy.proxy_app_name = proxy_app_name
+        if proxy_env_name: self.proxy.proxy_name = proxy_env_name
+        if client_configurations:
+            if isinstance(client_configurations, pathlib.Path):
+                self.load_client_configurations(client_configurations)
+            else: self.client_configurations.update(client_configurations)
 
         # Parse apart the azure setting configurations
         az_kwargs, rm_keys = {}, []
@@ -511,29 +706,64 @@ class OpenAISettings(BaseOpenAISettings):
         for k in rm_keys: kwargs.pop(k, None)
         super().configure(**kwargs)
 
+    
+    @validator('app_env', pre=True)
+    def validate_app_env(cls, value: Optional[Any]) -> Any:
+        """
+        Validates the app environment
+        """
+        if value is None:
+            from lazyops.libs.abcs.configs.base import get_app_env
+            return get_app_env(cls.__module__)
+        return AppEnv.from_env(value) if isinstance(value, str) else value
+
+    @property
+    def in_k8s(self) -> bool:
+        """
+        Returns whether the app is running in kubernetes
+        """
+        from lazyops.utils.system import is_in_kubernetes
+        return is_in_kubernetes()
+    
+    @property
+    def is_local_env(self) -> bool:
+        """
+        Returns whether the environment is development
+        """
+        return self.app_env in [AppEnv.DEVELOPMENT, AppEnv.LOCAL] and not self.in_k8s
+    
+    @property
+    def is_production_env(self) -> bool:
+        """
+        Returns whether the environment is production
+        """
+        return self.app_env == AppEnv.PRODUCTION and self.in_k8s
+
+    @property
+    def is_development_env(self) -> bool:
+        """
+        Returns whether the environment is development
+        """
+        return self.app_env in [AppEnv.DEVELOPMENT, AppEnv.LOCAL, AppEnv.CICD]
 
 
-_settings: Optional[OpenAISettings] = None
+settings: OpenAISettings = ProxyObject(OpenAISettings)
 
 def get_settings(**kwargs) -> OpenAISettings:
     """
     Returns the OpenAI Settings
     """
-    global _settings
-    if _settings is None:
-        _settings = OpenAISettings()
-    if kwargs: _settings.configure(**kwargs)
-    return _settings
+    if kwargs: settings.configure(**kwargs)
+    return settings
 
 def get_default_headers() -> Dict[str, Any]:
     """
     Returns the Default Headers
     """
-    return get_settings().get_headers()
-
+    return settings.get_headers()
 
 def get_max_retries() -> int:
     """
     Returns the Max Retries
     """
-    return get_settings().max_retries
+    return settings.max_retries

@@ -1,6 +1,6 @@
 import aiohttpx
 
-from typing import Optional, Dict, Callable, TYPE_CHECKING
+from typing import Optional, Dict, Callable, List, TYPE_CHECKING
 from async_openai.schemas import *
 from async_openai.utils.config import get_settings, OpenAISettings, AzureOpenAISettings
 from async_openai.utils.logs import logger
@@ -46,6 +46,7 @@ class ApiRoutes:
         max_retries: Optional[int] = None,
         settings: Optional[OpenAISettings] = None,
         is_azure: Optional[bool] = None,
+        client_callbacks: Optional[List[Callable]] = None,
         
         **kwargs
     ):
@@ -64,6 +65,8 @@ class ApiRoutes:
         self.is_azure = is_azure if is_azure is not None else \
             isinstance(self.settings, AzureOpenAISettings)
         self.kwargs = kwargs or {}
+        if client_callbacks:
+            self.kwargs['client_callbacks'] = client_callbacks
         self.init_routes()
     
 

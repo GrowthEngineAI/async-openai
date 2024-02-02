@@ -1,5 +1,23 @@
 # Changelogs
 
+#### v0.0.50 (2024-02-01)
+
+**Breaking Changes**
+
+- The `OpenAI` client has been refactored to be a singleton `ProxyObject` vs a `Type` object.
+  
+  Currently, this API is accessible with `async_openai.OpenAIManager`, which provides all the existing functionality of the `OpenAI` client, with a few additional features.
+
+    - `OpenAIManager` supports automatic proxy rotation and client selection based on available models.
+
+    - `OpenAIManager` supports automatic retrying of failed requests, as well as enabling automatic healthchecking prior to each request to ensure the endpoint is available with `auto_healthcheck_enabled`, otherwise it will rotate to another endpoint. This is useful for ensuring high availability and reliability of the API.
+    
+  Future versions will deprecate the `OpenAI` client in favor of the `OpenAIManager` object.
+
+- Added new `OpenAIFunctions` class which provides a robust interface for creating and running functions. This class is also a singleton `ProxyObject`.
+
+  This can be accessed through the `OpenAIManager.functions` object
+
 
 #### v0.0.41 (2023-11-06)
 

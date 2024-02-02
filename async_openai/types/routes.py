@@ -70,6 +70,8 @@ class BaseRoute(BaseModel):
     is_azure: Optional[bool] = None
     azure_model_mapping: Optional[Dict[str, str]] = None
 
+    client_callbacks: Optional[List[Callable]] = None
+
     @lazyproperty
     def api_resource(self):
         """
@@ -220,8 +222,12 @@ class BaseRoute(BaseModel):
             stream = input_object.get('stream'),
             **kwargs
         )
+        # if input_object.get('stream'):
+        #     await api_response.aread()
         data = self.handle_response(api_response)
         return await self.aprepare_response(data, input_object = input_object, parse_stream = parse_stream)
+    
+    acreate = async_create
     
     def batch_create(
         self, 
@@ -298,6 +304,8 @@ class BaseRoute(BaseModel):
         )
         resp = self.handle_response(api_response)
         return await self.aprepare_response(resp, input_object = input_object)
+    
+    abatch_create = async_batch_create
 
     
     def retrieve(
@@ -354,6 +362,8 @@ class BaseRoute(BaseModel):
         )
         data = self.handle_response(api_response)
         return self.prepare_response(data)
+    
+    aretrieve = async_retrieve
 
     def get(
         self, 
@@ -385,6 +395,7 @@ class BaseRoute(BaseModel):
         """
         return await self.async_retrieve(resource_id = resource_id, params = params, headers = headers, **kwargs)
 
+    aget = async_get
     
     def list(
         self, 
@@ -440,6 +451,8 @@ class BaseRoute(BaseModel):
         )
         data = self.handle_response(api_response)
         return await self.aprepare_response(data)
+    
+    alist = async_list
 
     def get_all(
         self, 
@@ -468,6 +481,8 @@ class BaseRoute(BaseModel):
         :return: Dict[str, Union[List[Type[BaseResource]], Dict[str, Any]]]
         """
         return await self.async_retrieve(params = params, **kwargs)
+    
+    aget_all = async_get_all
 
     def delete(
         self, 
@@ -519,6 +534,7 @@ class BaseRoute(BaseModel):
         data = self.handle_response(api_response)
         return self.prepare_response(data)
 
+    adelete = async_delete
 
     def update(
         self, 
@@ -605,8 +621,7 @@ class BaseRoute(BaseModel):
         data = self.handle_response(api_response)
         return self.prepare_response(data, input_object = input_object)
 
-
-
+    aupdate = async_update
 
     """
     Extra Methods
@@ -641,6 +656,8 @@ class BaseRoute(BaseModel):
             return await self.async_get(resource_id = resource_id, **kwargs)
         except Exception:
             return False
+        
+    aexists = async_exists
     
     def upsert(
         self,
@@ -702,7 +719,7 @@ class BaseRoute(BaseModel):
             return resource
         return await self.async_create(input_object = input_object, **kwargs)
 
-
+    aupsert = async_upsert
 
     def upload(
         self, 
@@ -776,6 +793,8 @@ class BaseRoute(BaseModel):
         data = self.handle_response(api_response)
         return self.prepare_response(data, input_object = input_object)
 
+    aupload = async_upload
+
     def download(
         self, 
         resource_id: str,
@@ -826,6 +845,8 @@ class BaseRoute(BaseModel):
         data = self.handle_response(api_response)
         return self.prepare_response(data)
 
+    adownload = async_download
+
     def prepare_response(
         self, 
         data: aiohttpx.Response,
@@ -842,9 +863,10 @@ class BaseRoute(BaseModel):
         """
         response_object = response_object or self.response_model
         if response_object:
-            return response_object.prepare_response(data, input_object = input_object, parse_stream = parse_stream)
+            response = response_object.prepare_response(data, input_object = input_object, parse_stream = parse_stream)
+            self.handle_callbacks(response, **kwargs)
+            return response
         raise NotImplementedError('Response model not defined for this resource.')
-
 
     async def aprepare_response(
         self, 
@@ -862,9 +884,28 @@ class BaseRoute(BaseModel):
         """
         response_object = response_object or self.response_model
         if response_object:
-            return await response_object.aprepare_response(data, input_object = input_object, parse_stream = parse_stream)
+            response = await response_object.aprepare_response(data, input_object = input_object, parse_stream = parse_stream)
+            self.handle_callbacks(response, **kwargs)
+            return response
         raise NotImplementedError('Response model not defined for this resource.')
 
+    def handle_callbacks(
+        self,
+        response_object: BaseResource,
+        **kwargs
+    ):
+        """
+        Handle the Callbacks for the Response as a Background Task
+
+        This is useful for when you want to run a background task after a response is received
+
+        The callback should be a function that takes the response object as the first argument
+        """
+        if self.client_callbacks:
+            from lazyops.libs.pooler import ThreadPooler
+            for callback in self.client_callbacks:
+                ThreadPooler.background(callback, response_object, **kwargs)
+        
     def handle_response(
         self, 
         response: aiohttpx.Response,

@@ -12,19 +12,21 @@ root = Path(__file__).parent
 version = root.joinpath('async_openai/version.py').read_text().split('VERSION = ', 1)[-1].strip().replace('-', '').replace("'", '')
 
 requirements = [
-    'aiohttpx',
+    'aiohttpx >= 0.0.12',
     # 'file-io',
     'backoff',
     'tiktoken',
-    'lazyops >= 0.2.60', # Pydantic Support
+    'lazyops >= 0.2.72', # Pydantic Support
     'pydantic',
+    'jinja2',
     # 'pydantic-settings', # remove to allow for v1/v2 support
 ]
 
 if sys.version_info.minor < 8:
     requirements.append('typing_extensions')
 
-extras = {}
+extras = {
+}
 
 args = {
     'packages': find_packages(include = [f'{pkg_name}', f'{pkg_name}.*',]),

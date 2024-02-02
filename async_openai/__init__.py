@@ -45,7 +45,7 @@ from async_openai.schemas.models import ModelRoute
 
 
 from async_openai.routes import ApiRoutes
-from async_openai.client import OpenAIClient, OpenAI
+from async_openai.client import OpenAIClient, OpenAI, OpenAIManager
 
 
 

@@ -139,6 +139,28 @@ class OpenAIError(Exception):
 
 
 
+class MaxRetriesExhausted(Exception):
+    """
+    Max Retries Exhausted
+    """
+
+    def __init__(self, name: str, func_name: str, model: str, attempts: int, max_attempts: int):
+        self.name = name
+        self.func_name = func_name
+        self.model = model
+        self.attempts = attempts
+        self.max_attempts = max_attempts
+    
+    def __str__(self):
+        return f"[{self.name} - {self.model}] All retries exhausted for {self.func_name}. ({self.attempts}/{self.max_attempts})"
+        
+    def __repr__(self):
+        """
+        Returns the string representation of the error.
+        """
+        return f"[{self.name} - {self.model}] (func_name={self.func_name}, attempts={self.attempts}, max_attempts={self.max_attempts})"
+        
+
 class APIError(OpenAIError):
     pass
 
@@ -221,7 +243,7 @@ def fatal_exception(exc) -> bool:
     # with 400, 404, 415 status codes (invalid request),
     # 400 can include invalid parameters, such as invalid `max_tokens`
     # don't retry on other client errors
-    if isinstance(exc, (InvalidMaxTokens, InvalidRequestError)):
+    if isinstance(exc, (InvalidMaxTokens, InvalidRequestError, MaxRetriesExhausted)):
         return True
     
     return (400 <= exc.status < 500) and exc.status not in [429, 400, 404, 415, 524] # [429, 400, 404, 415]
