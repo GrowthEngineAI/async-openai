@@ -208,6 +208,9 @@ class ModelContextHandlerMetaClass(type):
         # Switch the 35 -> 3.5
         if '35' in model_name: model_name = model_name.replace('35', '3.5')
         model = cls[model_name]
+        if isinstance(usage, dict):
+            from .resources import Usage
+            usage = Usage(**usage)
         return model.get_costs(usage = usage, **kwargs)
     
     def resolve_model_name(cls, model_name: str) -> str:
