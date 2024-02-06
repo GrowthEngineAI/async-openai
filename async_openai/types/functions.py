@@ -938,9 +938,10 @@ class FunctionManager(ABC):
         """
         Runs the function
         """
-        overwrite = overrides and 'functions' in overrides
+        overwrite = function_kwargs.pop('overwrite', None)
+        overwrite = overwrite or overrides and 'functions' in overrides
         function = self.get(function)
-        if overwrite and self.check_value_present(overrides, f'{function.name}.cachable'):
+        if overwrite and overrides and self.check_value_present(overrides, f'{function.name}.cachable'):
             cachable = False
         
         # Iterators
@@ -988,9 +989,10 @@ class FunctionManager(ABC):
         """
         Runs the function
         """
-        overwrite = overrides and 'functions' in overrides
+        overwrite = function_kwargs.pop('overwrite', None)
+        overwrite = overwrite or overrides and 'functions' in overrides
         function = self.get(function)
-        if overwrite and self.check_value_present(overrides, f'{function.name}.cachable'):
+        if overwrite and overrides and self.check_value_present(overrides, f'{function.name}.cachable'):
             cachable = False
         
         # Iterators
