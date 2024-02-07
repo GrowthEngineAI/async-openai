@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from .resources import Usage
     from async_openai.schemas.chat import ChatMessage
     from transformers import PreTrainedTokenizer
-    from async_openai.utils.external_config import ExternalProviderSettings
+    from async_openai.utils.external_config import ExternalProviderSettings, ProviderModel
 
 pricing_file_path = Path(__file__).parent.joinpath('pricing.yaml')
 
@@ -84,7 +84,7 @@ class ModelCostHandlerClass(abc.ABC):
         self._model_aliases: Optional[Dict[str, str]] = None
         self.tokenizers: Optional[Dict[str, tiktoken.Encoding]] = {}
 
-        self.external_models: Optional[Dict[str, ModelCostItem]] = {}
+        self.external_models: Optional[Dict[str, 'ProviderModel']] = {}
         self.external_model_aliases: Optional[Dict[str, str]] = {}
         self.external_tokenizers: Optional[Dict[str, 'PreTrainedTokenizer']] = {}
 
@@ -115,7 +115,7 @@ class ModelCostHandlerClass(abc.ABC):
         return self._model_aliases
 
 
-    def get_external_model(self, name: str) -> Optional[ModelCostItem]:
+    def get_external_model(self, name: str) -> Optional['ProviderModel']:
         """
         Gets the model
         """
@@ -205,16 +205,16 @@ class ModelCostHandlerClass(abc.ABC):
         Gets the tokenizer
         """
         # Remove the provider name
-        if name.count('/') > 1:
-            name = name.split('/', 1)[1]
-        if name not in self.external_tokenizers:
+        model = self.get_external_model(name)
+        tokenizer_name = model.tokenizer or model.name
+        if tokenizer_name not in self.external_tokenizers:
             try:
                 from transformers import AutoTokenizer
             except ImportError as e:
                 raise ImportError("transformers is not installed, please install it to use this feature") from e            
-            tokenizer = AutoTokenizer.from_pretrained(name)
-            self.external_tokenizers[name] = tokenizer
-        return self.external_tokenizers[name]
+            tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
+            self.external_tokenizers[tokenizer_name] = tokenizer
+        return self.external_tokenizers[tokenizer_name]
 
     def get_tokenizer(self, name: str) -> Optional[Union[tiktoken.Encoding, 'PreTrainedTokenizer']]:
         """
@@ -222,7 +222,9 @@ class ModelCostHandlerClass(abc.ABC):
         """
         # Switch the 35 -> 3.5
         # OpenAI Models don't have / in the name
-        if '/' in name: return self.get_external_tokenizer(name)
+        if '/' in name or name in self.external_model_aliases \
+            or name in self.external_models: return self.get_external_tokenizer(name)
+        
         if '35' in name: name = name.replace('35', '3.5')    
         if name not in self.tokenizers:
             if name in {'text-embedding-3-small', 'text-embedding-3-large'}:

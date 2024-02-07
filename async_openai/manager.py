@@ -737,6 +737,7 @@ class OpenAIManager(abc.ABC):
         elif model: client_names = [client for model_name, client in self.external_model_to_client.items() if model in model_name]
         else: client_names = self.external_client_names
         if noproxy_required: client_names = [c for c in client_names if 'noproxy' in c]
+        else: client_names = [c for c in client_names if 'noproxy' not in c]
         if excluded_clients: client_names = [c for c in client_names if c not in excluded_clients]
         return list(set(client_names))
 

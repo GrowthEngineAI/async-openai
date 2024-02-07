@@ -1,8 +1,6 @@
 import json
-import logging
 import pathlib
 import aiohttpx
-import contextlib
 from typing import Optional, Dict, Union, Any, List, Type, TYPE_CHECKING
 from lazyops.types import BaseSettings, validator, BaseModel, lazyproperty, Field, PYD_VERSION
 from lazyops.libs.proxyobj import ProxyObject
@@ -82,6 +80,7 @@ class ProviderModel(ModelCostItem):
     A Provider Model
     """
     name: str = Field(..., description="The Model Name")
+    tokenizer: Optional[str] = Field(None, description="The Tokenizer Name") 
 
 
 class ProviderRoute(BaseModel):
@@ -119,9 +118,9 @@ class ExternalProviderRoutes(BaseModel):
     """
     External Provider - Routes
     """
-    completion: Optional[ProviderRoute] = Field(None, description="The Completion Route")
+    completions: Optional[ProviderRoute] = Field(None, description="The Completion Route")
     chat: Optional[ProviderRoute] = Field(None, description="The Chat Route")
-    embedding: Optional[ProviderRoute] = Field(None, description="The Embedding Route")
+    embeddings: Optional[ProviderRoute] = Field(None, description="The Embedding Route")
     # if TYPE_CHECKING:
 
     if PYD_VERSION == 2:
@@ -152,38 +151,38 @@ class ExternalProviderRoutes(BaseModel):
             if self.chat.response_class is None:
                 self.chat.response_class = ChatResponse
 
-            if self.completion is None:
-                self.completion = ProviderRoute(
-                    name = "completion",
+            if self.completions is None:
+                self.completions = ProviderRoute(
+                    name = "completions",
                     route_class = CompletionRoute,
                     object_class = CompletionObject,
                     response_class = CompletionResponse,
                 )
-            if not self.completion.name:
-                self.completion.name = "completion"
-            if self.completion.route_class is None:
-                self.completion.route_class = CompletionRoute
-            if self.completion.object_class is None:
-                self.completion.object_class = CompletionObject
-            if self.completion.response_class is None:
-                self.completion.response_class = CompletionResponse
+            if not self.completions.name:
+                self.completions.name = "completions"
+            if self.completions.route_class is None:
+                self.completions.route_class = CompletionRoute
+            if self.completions.object_class is None:
+                self.completions.object_class = CompletionObject
+            if self.completions.response_class is None:
+                self.completions.response_class = CompletionResponse
 
-            if self.embedding is None:
-                self.embedding = ProviderRoute(
-                    name = "embedding",
+            if self.embeddings is None:
+                self.embeddings = ProviderRoute(
+                    name = "embeddings",
                     route_class = EmbeddingRoute,
                     object_class = EmbeddingObject,
                     response_class = EmbeddingResponse,
                 )
             
-            if not self.embedding.name:
-                self.embedding.name = "embedding"
-            if self.embedding.route_class is None:
-                self.embedding.route_class = EmbeddingRoute
-            if self.embedding.object_class is None:
-                self.embedding.object_class = EmbeddingObject
-            if self.embedding.response_class is None:
-                self.embedding.response_class = EmbeddingResponse
+            if not self.embeddings.name:
+                self.embeddings.name = "embeddings"
+            if self.embeddings.route_class is None:
+                self.embeddings.route_class = EmbeddingRoute
+            if self.embeddings.object_class is None:
+                self.embeddings.object_class = EmbeddingObject
+            if self.embeddings.response_class is None:
+                self.embeddings.response_class = EmbeddingResponse
             return self
 
     else:
@@ -216,41 +215,41 @@ class ExternalProviderRoutes(BaseModel):
             if values['chat'].response_class is None:
                 values['chat'].response_class = ChatResponse
             
-            if values.get('completion') is None:
-                values['completion'] = ProviderRoute(
-                    name = "completion",
+            if values.get('completions') is None:
+                values['completions'] = ProviderRoute(
+                    name = "completions",
                     route_class = CompletionRoute,
                     object_class = CompletionObject,
                     response_class = CompletionResponse,
                 )
             else:
-                values['completion'] = ProviderRoute.parse_obj(values['completion'])
-            if not values['completion'].name:
-                values['completion'].name = "completion"
-            if values['completion'].route_class is None:
-                values['completion'].route_class = CompletionRoute
-            if values['completion'].object_class is None:
-                values['completion'].object_class = CompletionObject
-            if values['completion'].response_class is None:
-                values['completion'].response_class = CompletionResponse
+                values['completions'] = ProviderRoute.parse_obj(values['completions'])
+            if not values['completions'].name:
+                values['completions'].name = "completions"
+            if values['completions'].route_class is None:
+                values['completions'].route_class = CompletionRoute
+            if values['completions'].object_class is None:
+                values['completions'].object_class = CompletionObject
+            if values['completions'].response_class is None:
+                values['completions'].response_class = CompletionResponse
             
-            if values.get('embedding') is None:
-                values['embedding'] = ProviderRoute(
-                    name = "embedding",
+            if values.get('embeddings') is None:
+                values['embeddings'] = ProviderRoute(
+                    name = "embeddings",
                     route_class = EmbeddingRoute,
                     object_class = EmbeddingObject,
                     response_class = EmbeddingResponse,
                 )
             else:
-                values['embedding'] = ProviderRoute.parse_obj(values['embedding'])
-            if not values['embedding'].name:
-                values['embedding'].name = "embedding"
-            if values['embedding'].route_class is None:
-                values['embedding'].route_class = EmbeddingRoute
-            if values['embedding'].object_class is None:
-                values['embedding'].object_class = EmbeddingObject
-            if values['embedding'].response_class is None:
-                values['embedding'].response_class = EmbeddingResponse
+                values['embeddings'] = ProviderRoute.parse_obj(values['embeddings'])
+            if not values['embeddings'].name:
+                values['embeddings'].name = "embeddings"
+            if values['embeddings'].route_class is None:
+                values['embeddings'].route_class = EmbeddingRoute
+            if values['embeddings'].object_class is None:
+                values['embeddings'].object_class = EmbeddingObject
+            if values['embeddings'].response_class is None:
+                values['embeddings'].response_class = EmbeddingResponse
             return values
         
     @property
@@ -260,8 +259,8 @@ class ExternalProviderRoutes(BaseModel):
         """
         return {
             "chat": self.chat.route_class,
-            "completion": self.completion.route_class,
-            "embedding": self.embedding.route_class,
+            "completions": self.completions.route_class,
+            "embeddings": self.embeddings.route_class,
         }
             
 
@@ -350,7 +349,9 @@ class ExternalProviderAuth(aiohttpx.Auth):
         if self.config.has_api_key and self.config.api_key_header not in request.headers:
             request.headers[self.config.api_key_header] = self.config.api_key_value
         if self.config.custom_headers:
-            request.headers.update(self.config.custom_headers)        
+            request.headers.update(self.config.custom_headers)
+        if self.is_proxied and self.config.proxy_headers:
+            request.headers.update(self.config.proxy_headers)
         yield request
 
     async def async_auth_flow(self, request):
@@ -361,6 +362,8 @@ class ExternalProviderAuth(aiohttpx.Auth):
             request.headers[self.config.api_key_header] = self.config.api_key_value
         if self.config.custom_headers:
             request.headers.update(self.config.custom_headers)
+        if self.is_proxied and self.config.proxy_headers:
+            request.headers.update(self.config.proxy_headers)
         yield request
         
         

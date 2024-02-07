@@ -1,4 +1,4 @@
-# Configuration for together.xyz External Provider
+# Configuration for together.xyz External Provider with Helicone Proxy Support
 name: together
 config:
   api_base: https://api.together.xyz
@@ -7,6 +7,11 @@ config:
   api_key_scheme: Bearer 
   api_key: env/TOGETHER_API_KEY
   hf_compatible: true
+  proxy_url: https://gateway.hconeai.com/v1
+  proxy_headers:
+    Helicone-Auth: Bearer env/HELICONE_API_KEY
+    Helicone-Target-Provider: Together-AI
+    Helicone-Target-Url: https://api.together.xyz
 routes:
   chat:
     object_class: async_openai.schemas.external.together.chat.ChatObject
@@ -14,17 +19,9 @@ routes:
     route_class: async_openai.schemas.external.together.chat.ChatRoute
   embeddings: 
     object_class: async_openai.schemas.external.together.embeddings.EmbeddingObject
-    # response_class: async_openai.schemas.external.together.embeddings.EmbeddingResponse
+    response_class: async_openai.schemas.external.together.embeddings.EmbeddingResponse
     route_class: async_openai.schemas.external.together.embeddings.EmbeddingRoute
 
-# routes:
-#   completion: 
-#     path: /complete
-#     params:
-#       model: str
-#       prompt: str
-#       max_tokens: int
-#       ...
 models:
 - name: mistralai/Mixtral-8x7B-Instruct-v0.1
   aliases:
