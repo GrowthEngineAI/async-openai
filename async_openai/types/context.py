@@ -140,13 +140,19 @@ class ModelCostHandlerClass(abc.ABC):
         Resolves the Model Name from the model aliases
         """
         # Try to remove the version number
-        key = model_name.rsplit('-', 1)[0].strip()
-        if key in self.model_aliases:
-            self.model_aliases[model_name] = self.model_aliases[key]
-        if key in self.models:
-            self.model_aliases[model_name] = key
-            return key
-        raise KeyError(f"Model {model_name} not found")
+        if model_name in self.models:
+            return model_name
+        
+        # if model_name in self.model_aliases:
+        return self.model_aliases.get(model_name, model_name)
+        
+        # key = model_name.rsplit('-', 1)[0].strip()
+        # if key in self.model_aliases:
+        #     return self.model_aliases[key]
+        # elif key in self.models:
+        #     self.model_aliases[model_name] = key
+        #     return key
+        # raise KeyError(f"Model {key}/{model_name} not found in {self.model_aliases} / {list(self.models.keys())}")
     
     def __getitem__(self, key: str) -> ModelCostItem:
         """
@@ -154,7 +160,7 @@ class ModelCostHandlerClass(abc.ABC):
         """
         if '/' in key: return self.get_external_model(key)
         if key not in self.model_aliases and key not in self.models:
-            return self.resolve_model_name(key)
+            return self.models[self.resolve_model_name(key)]
         if key in self.model_aliases:
             key = self.model_aliases[key]
         return self.models[key]
