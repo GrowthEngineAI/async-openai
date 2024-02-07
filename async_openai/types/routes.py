@@ -72,56 +72,89 @@ class BaseRoute(BaseModel):
 
     client_callbacks: Optional[List[Callable]] = None
 
-    @lazyproperty
-    def api_resource(self):
-        """
-        Returns the API Resource
-        """
-        return ''
+    api_resource: Optional[str] = Field(default = '', exclude = True)
+    root_name: Optional[str] = Field(default = '', exclude = True)
+
+    # @lazyproperty
+    # def api_resource(self):
+    #     """
+    #     Returns the API Resource
+    #     """
+    #     return ''
     
     """
     Enable or Disable Routes
     """
     @lazyproperty
     def create_enabled(self):
+        """
+        Returns whether the Create Route is Enabled
+        """
         return True
     
     @lazyproperty
     def create_batch_enabled(self):
+        """
+        Returns whether the Create Batch Route is Enabled
+        """
         return False
     
     @lazyproperty
     def get_enabled(self):
+        """
+        Returns whether the Get Route is Enabled
+        """
         return False
 
     @lazyproperty
     def list_enabled(self):
+        """
+        Returns whether the List Route is Enabled
+        """
         return False
 
     @lazyproperty
     def update_enabled(self):
+        """
+        Returns whether the Update Route is Enabled
+        """
         return False
     
     @lazyproperty
     def delete_enabled(self):
+        """
+        Returns whether the Delete Route is Enabled
+        """
         return False
 
 
     @lazyproperty
     def download_enabled(self):
+        """
+        Returns whether the Download Route is Enabled
+        """
         return False
     
     @lazyproperty
     def upload_enabled(self):
+        """
+        Returns whether the Upload Route is Enabled
+        """
         return False
     
     @lazyproperty
     def exclude_null(self) -> bool:
+        """
+        Returns whether to exclude null values
+        """
         return True
     
 
     @lazyproperty
     def usage_enabled(self):
+        """
+        Returns whether the Usage Route is Enabled
+        """
         return False
     
     def get_resource_url(self, data: Optional[Dict[str, Any]] = None, **kwargs) -> str:

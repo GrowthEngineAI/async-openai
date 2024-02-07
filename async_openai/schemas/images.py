@@ -1,5 +1,5 @@
 from typing import Optional, Type, Any, Union, List, Dict
-from lazyops.types import validator, lazyproperty, BaseModel
+from lazyops.types import validator, lazyproperty, BaseModel, Field
 
 from async_openai.types.options import ImageSize, ImageFormat
 from async_openai.types.resources import BaseResource, File, FileType, _has_fileio
@@ -84,9 +84,11 @@ class ImageRoute(BaseRoute):
     input_model: Optional[Type[BaseResource]] = ImageObject
     response_model: Optional[Type[BaseResource]] = ImageResponse
 
-    @lazyproperty
-    def api_resource(self):
-        return 'images'
+    api_resource: Optional[str] = Field(default = 'images')
+
+    # @lazyproperty
+    # def api_resource(self):
+    #     return 'images'
 
     def create(
         self, 

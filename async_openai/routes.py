@@ -1,7 +1,8 @@
 import aiohttpx
 
-from typing import Optional, Dict, Callable, List, TYPE_CHECKING
+from typing import Optional, Dict, Callable, List, Type, TYPE_CHECKING
 from async_openai.schemas import *
+from async_openai.types.routes import BaseRoute
 from async_openai.utils.config import get_settings, OpenAISettings, AzureOpenAISettings
 from async_openai.utils.logs import logger
 
@@ -47,6 +48,7 @@ class ApiRoutes:
         settings: Optional[OpenAISettings] = None,
         is_azure: Optional[bool] = None,
         client_callbacks: Optional[List[Callable]] = None,
+        route_classes: Optional[Dict[str, Type[BaseRoute]]] = None,
         
         **kwargs
     ):
@@ -62,6 +64,7 @@ class ApiRoutes:
 
         self.timeout = timeout
         self.max_retries = max_retries
+        self.route_classes = route_classes or RouteClasses.copy()
         self.is_azure = is_azure if is_azure is not None else \
             isinstance(self.settings, AzureOpenAISettings)
         self.kwargs = kwargs or {}
@@ -75,7 +78,7 @@ class ApiRoutes:
         """
         Initializes the routes
         """
-        for route, route_class in RouteClasses.items():
+        for route, route_class in self.route_classes.items():
             try:
                 setattr(self, route, route_class(
                     client = self.client,

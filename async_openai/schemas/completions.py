@@ -306,13 +306,16 @@ class CompletionRoute(BaseRoute):
     input_model: Optional[Type[BaseResource]] = CompletionObject
     response_model: Optional[Type[BaseResource]] = CompletionResponse
 
-    @lazyproperty
-    def api_resource(self):
-        return 'completions'
+    api_resource: Optional[str] = Field(default = 'completions')
+    root_name: Optional[str] = Field(default = 'completion')
 
-    @lazyproperty
-    def root_name(self):
-        return 'completion'
+    # @lazyproperty
+    # def api_resource(self):
+    #     return 'completions'
+
+    # @lazyproperty
+    # def root_name(self):
+    #     return 'completion'
     
     def create(
         self, 

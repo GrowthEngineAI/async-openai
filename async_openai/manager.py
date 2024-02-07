@@ -14,6 +14,7 @@ from async_openai.schemas import *
 from async_openai.types.options import ApiType
 from async_openai.types.context import ModelContextHandler
 from async_openai.utils.config import get_settings, OpenAISettings
+from async_openai.utils.external_config import ExternalProviderSettings
 from async_openai.types.functions import FunctionManager, OpenAIFunctions
 from async_openai.utils.logs import logger
 
@@ -21,7 +22,9 @@ from .loadbalancer import ClientLoadBalancer
 
 if TYPE_CHECKING:
     from async_openai.client import OpenAIClient
+    from async_openai.external_client import ExternalOpenAIClient
     from lazyops.libs.pooler import ThreadPool
+    from async_openai.schemas.chat import Function
 
 
 
@@ -65,6 +68,11 @@ class OpenAIManager(abc.ABC):
         self.ctx = ModelContextHandler
         if self.auto_loadbalance_clients is None: self.auto_loadbalance_clients = self.settings.auto_loadbalance_clients
         if self.auto_healthcheck is None: self.auto_healthcheck = self.settings.auto_healthcheck
+
+        self.external_clients: Dict[str, 'ExternalOpenAIClient'] = {}
+        self.external_model_to_client: Dict[str, str] = {}
+        self.external_client_default: Optional[str] = None
+        # self._external_clients: 
 
     def add_callback(self, callback: Callable):
         """
@@ -337,6 +345,97 @@ class OpenAIManager(abc.ABC):
             self._api = client
         return client
     
+    def configure_external_client(
+        self,
+        client: 'ExternalOpenAIClient',
+        set_as_default: Optional[bool] = False,
+        **kwargs,
+    ):
+        """
+        Configures the External Client
+        """
+        self.external_clients[client.name] = client
+        if set_as_default or not self.external_client_default:
+            self.external_client_default = client.name
+        for model_name in client.provider.model_list:
+            provider_model_name = f'{client.name}/{model_name}'
+            self.external_model_to_client[provider_model_name] = client.name
+            if model_name not in self.external_model_to_client or set_as_default:
+                self.external_model_to_client[model_name] = client.name
+
+    
+    def init_external_api_client(
+        self,
+        provider: ExternalProviderSettings,
+        client_name: Optional[str] = None,
+        set_as_default: Optional[bool] = False,
+        disable_proxy: Optional[bool] = None,
+        **kwargs
+    ) -> 'ExternalOpenAIClient':
+        """
+        Initializes an external OpenAI client
+        """
+        client_name = client_name or provider.name
+        if client_name in self.external_clients:
+            return self.external_clients[client_name]
+        from async_openai.external_client import ExternalOpenAIClient
+        if 'client_callbacks' not in kwargs and self.client_callbacks:
+            kwargs['client_callbacks'] = self.client_callbacks
+        if not disable_proxy and provider.config.has_proxy:
+            # Configure the proxy version of the client
+            client = ExternalOpenAIClient(
+                name = client_name,
+                provider = provider,
+                settings = self.settings,
+                is_proxied = True,
+                **kwargs
+            )
+            self.configure_external_client(client, set_as_default = set_as_default)
+            # Initialize a non-proxy version of the client
+            non_proxy_client_name = f'{client_name}_noproxy'
+            non_proxy_client = ExternalOpenAIClient(
+                name = non_proxy_client_name,
+                provider = provider,
+                settings = self.settings,
+                is_proxied = False,
+                **kwargs
+            )
+            self.configure_external_client(non_proxy_client, set_as_default = False)
+        else:
+            client = ExternalOpenAIClient(
+                name = client_name,
+                provider = provider,
+                settings = self.settings,
+                is_proxied = False,
+                **kwargs
+            )
+            self.configure_external_client(client, set_as_default = set_as_default)
+        logger.info(f'Registered `|g|{client.name}|e|` @ `{client.provider.config.api_url}` (External - {client.provider.name})', colored = True)
+        return client
+
+
+    def init_external_api_client_from_preset(
+        self,
+        preset_name: Optional[str] = None,
+        preset_path: Optional[Union[str, pathlib.Path]] = None,
+        client_name: Optional[str] = None,
+        set_as_default: Optional[bool] = False,
+        disable_proxy: Optional[bool] = None,
+        **kwargs
+    ) -> 'ExternalOpenAIClient':
+        """
+        Initializes an external OpenAI client from a preset
+        """
+        provider = ExternalProviderSettings.from_preset(name = preset_name, path = preset_path)
+        return self.init_external_api_client(
+            provider = provider, 
+            client_name = client_name, 
+            set_as_default = set_as_default,
+            disable_proxy = disable_proxy, 
+            **kwargs
+        )
+
+
     def rotate_client(self, index: Optional[int] = None, verbose: Optional[bool] = False, **kwargs):
         """
         Rotates the clients
@@ -401,6 +500,15 @@ class OpenAIManager(abc.ABC):
             self.init_api_client()
         return self._api
     
+    @property
+    def external_api(self) -> 'ExternalOpenAIClient':
+        """
+        Returns the inherited External OpenAI client.
+        """
+        if not self.external_client_default or not self.external_clients:
+            raise ValueError('No External Client has been initialized.')
+        return self.external_clients[self.external_client_default]
+    
     def configure_internal_apis(self):
         """
         Helper method to ensure that the APIs are initialized
@@ -419,8 +527,6 @@ class OpenAIManager(abc.ABC):
         if self._api is None: self.configure_internal_apis()
 
 
-    
-    
     """
     API Routes
     """
@@ -605,6 +711,36 @@ class OpenAIManager(abc.ABC):
             # return [k for k, v in self.client_model_exclusions.items() if v['is_azure']]
         return None
     
+    @property
+    def external_client_names(self) -> List[str]:
+        """
+        Returns the list of external client names
+        """
+        return list(self.external_clients.keys())
+    
+    def select_external_client_names(
+        self,
+        client_name: Optional[str] = None,
+        model: Optional[str] = None,
+        noproxy_required: Optional[bool] = None,
+        excluded_clients: Optional[List[str]] = None,
+    ) -> Optional[List[str]]:
+        """
+        Select External Client based on the client name, and model
+        """
+        if client_name and model:
+            client_names = [
+                client for model_name, client in self.external_model_to_client.items() if model in model_name \
+                and client_name in model_name
+            ]
+        elif client_name: client_names = [name for name in self.external_client_names if client_name in name]
+        elif model: client_names = [client for model_name, client in self.external_model_to_client.items() if model in model_name]
+        else: client_names = self.external_client_names
+        if noproxy_required: client_names = [c for c in client_names if 'noproxy' in c]
+        if excluded_clients: client_names = [c for c in client_names if c not in excluded_clients]
+        return list(set(client_names))
+
+    
     def get_client(
         self, 
         client_name: Optional[str] = None, 
@@ -614,7 +750,7 @@ class OpenAIManager(abc.ABC):
         noproxy_required: Optional[bool] = None,
         excluded_clients: Optional[List[str]] = None,
         **kwargs,
-    ) -> "OpenAIClient":
+    ) -> Union["OpenAIClient", "ExternalOpenAIClient"]:
         """
         Gets the OpenAI client
 
@@ -627,6 +763,12 @@ class OpenAIManager(abc.ABC):
             excluded_clients (List[str], optional): A list of client names to exclude from selection.
         """
         self._ensure_api()
+        if (
+            model and ('/' in model or model in self.external_model_to_client)
+        ) or (
+            client_name and client_name in self.external_clients
+        ):
+            return self.get_external_client(client_name = client_name, model = model, noproxy_required = noproxy_required, excluded_clients = excluded_clients, **kwargs)
         client_names = self.select_client_names(
             client_name = client_name, 
             azure_required = azure_required, 
@@ -641,9 +783,32 @@ class OpenAIManager(abc.ABC):
             **kwargs
         )
         if self.debug_enabled:
-            logger.info(f'Available Clients: {client_names} - Selected: {client.name}')
+            logger.info(f'Available Clients: {client_names} - Selected: `|g|{client.name}|e|`', colored = True)
         if not client_name and self.auto_loadbalance_clients:
             self.apis.increase_rotate_index()
+        return client
+    
+    def get_external_client(
+        self,
+        client_name: Optional[str] = None,
+        model: Optional[str] = None,
+        noproxy_required: Optional[bool] = None,
+        excluded_clients: Optional[List[str]] = None,
+        **kwargs,
+    ) -> "ExternalOpenAIClient":
+        """
+        Gets the External OpenAI client
+        """
+        client_names = self.select_external_client_names(
+            client_name = client_name, 
+            model = model, 
+            noproxy_required = noproxy_required, 
+            excluded_clients = excluded_clients
+        )
+        client_name = random.choice(client_names)
+        client = self.external_clients[client_name]
+        if self.debug_enabled:
+            logger.info(f'Available Clients: {client_names} - Selected: {client.name}')
         return client
     
 
@@ -813,10 +978,12 @@ class OpenAIManager(abc.ABC):
     async def __aexit__(self, exc_type, exc_value, traceback):
         await self.async_close()
 
-    def __getitem__(self, key: Union[int, str]) -> 'OpenAIClient':
+    def __getitem__(self, key: Union[int, str]) -> Union['OpenAIClient', 'ExternalOpenAIClient']:
         """
         Returns the OpenAI API Client.
         """
+        if isinstance(key, str) and key in self.external_clients:
+            return self.external_clients[key]
         if self.auto_loadbalance_clients:
             return self.apis[key]
         if isinstance(key, int):
@@ -949,6 +1116,58 @@ class OpenAIManager(abc.ABC):
             self.rotate_client(verbose=verbose)
             return self.chat_create(input_object = input_object, parse_stream = parse_stream, auto_retry = auto_retry, auto_retry_limit = auto_retry_limit, **kwargs)
     
+    @overload
+    async def async_chat_create(
+        self,
+        messages: Union[List[ChatMessage], List[Dict[str, str]]],
+        model: Optional[str] = None,
+        functions: Optional[List['Function']] = None,
+        function_call: Optional[Union[str, Dict[str, str]]] = None,
+        max_tokens: Optional[int] = None,
+        temperature: Optional[float] = None,
+        auto_retry: Optional[bool] = False,
+        auto_retry_limit: Optional[int] = None,
+        header_cache_keys: Optional[List[str]] = None,
+        **kwargs
+    ) -> ChatResponse:
+        """
+        Creates a chat response for the provided prompt and parameters
+
+        Usage:
+
+        ```python
+        >>> result = await OpenAI.chat.async_create(
+        >>>    messages = [{'content': 'say this is a test'}],
+        >>>    max_tokens = 4,
+        >>>    functions = [{'name': 'test', 'parameters': {'test': 'test'}}],
+        >>>    function_call = 'auto'
+        >>> )
+        ```
+        **Parameters:**
+
+        :model (required): ID of the model to use. You can use the List models API
+        to see all of your available models,  or see our Model overview for descriptions of them.
+        Default: `gpt-3.5-turbo`
+
+        :messages: The messages to generate chat completions for, in the chat format.
+
+        :max_tokens (optional): The maximum number of tokens to generate in the completion.
+
+        :temperature (optional): What sampling temperature to use. Higher values means
+
+        :functions (optional): A list of dictionaries representing the functions to call
+
+        :function_call (optional): The name of the function to call
+
+        :auto_retry (optional): Whether to automatically retry the request if it fails
+
+        :auto_retry_limit (optional): The maximum number of times to retry the request
+
+        :header_cache_keys (optional): A list of keys to use for caching the headers
+
+        Returns a ChatResponse
+        """
+        ...
 
     async def async_chat_create(
         self, 
@@ -1003,7 +1222,7 @@ class OpenAIManager(abc.ABC):
         settings for `max_tokens` and stop.
         Default: `1`
 
-        :stream (optional): CURRENTLY NOT SUPPORTED
+        :stream (optional):
         Whether to stream back partial progress. 
         If set, tokens will be sent as data-only server-sent events as they become 
         available, with the stream terminated by a `data: [DONE]` message. This is 

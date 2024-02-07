@@ -13,6 +13,7 @@ from async_openai.utils.logs import logger
 
 if TYPE_CHECKING:
     from async_openai.client import OpenAIClient, OpenAISessionManager
+    from async_openai.external_client import ExternalOpenAIClient, ExternalProviderSettings
 
 
 class ClientLoadBalancer:
@@ -205,6 +206,7 @@ class ClientLoadBalancer:
             return self.api
         return self.clients[client_name] if client_name else self.api
     
+
     def get_api_client_from_list(self, client_names: List[str], require_azure: Optional[bool] = None, **kwargs) -> 'OpenAIClient':
         """
         Initializes a new OpenAI client or Returns an existing one from a list of client names.

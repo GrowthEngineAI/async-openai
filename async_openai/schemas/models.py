@@ -50,6 +50,9 @@ class ModelResponse(BaseResponse):
 
     @lazyproperty
     def model_list(self) -> List[str]:
+        """
+        Returns a list of model IDs
+        """
         return [model.id for model in self.data] if self.data and isinstance(self.data, list) else []
 
 
@@ -57,21 +60,33 @@ class ModelRoute(BaseRoute):
     input_model: Optional[Type[BaseResource]] = ModelObject
     response_model: Optional[Type[BaseResource]] = ModelResponse
 
-    @lazyproperty
-    def api_resource(self):
-        return 'models'
+    api_resource: Optional[str] = Field(default = 'models')
+
+    # @lazyproperty
+    # def api_resource(self):
+    #     return 'models'
     
     @lazyproperty
     def create_enabled(self):
-        return False
+        """
+        Returns whether the Create Route is Enabled
+        """
+        return True
+    
     
     @lazyproperty
     def list_enabled(self):
-        return True
+        """
+        Returns whether the List Route is Enabled
+        """
+        return False
     
     @lazyproperty
     def get_enabled(self):
-        return True
+        """
+        Returns whether the Get Route is Enabled
+        """
+        return False
 
     def retrieve(
         self, 

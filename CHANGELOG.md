@@ -1,5 +1,13 @@
 # Changelogs
 
+#### v0.0.51rc (2024-02-07)
+
+- Modification of `async_openai.types.context.ModelContextHandler` to a proxied object singleton.
+
+- Begin adding support for external providers, such as `together` to allow usage in conjunction with `OpenAI` models. WIP.
+
+- Rework of `api_resource` and `root_name` in `Route` objects to be settable during initialization. This is to allow for flexibility for external providers.
+
 #### v0.0.50 (2024-02-01)
 
 **Breaking Changes**

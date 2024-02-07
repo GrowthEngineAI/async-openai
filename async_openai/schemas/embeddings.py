@@ -1,7 +1,7 @@
 import time
 import asyncio
-from typing import Optional, Type, Any, Union, List, Dict
-from lazyops.types import validator, lazyproperty
+from typing import Optional, Type, Any, Union, List, Dict, overload
+from lazyops.types import validator, lazyproperty, Field
 
 from async_openai.types.context import ModelContextHandler
 from async_openai.types.resources import BaseResource
@@ -90,15 +90,52 @@ class EmbeddingResponse(BaseResponse):
 class EmbeddingRoute(BaseRoute):
     input_model: Optional[Type[BaseResource]] = EmbeddingObject
     response_model: Optional[Type[BaseResource]] = EmbeddingResponse
+    api_resource: Optional[str] = Field(default = 'embeddings')
+    root_name: Optional[str] = Field(default = 'embedding')
 
-    @lazyproperty
-    def api_resource(self):
-        return 'embeddings'
+    # @lazyproperty
+    # def api_resource(self):
+    #     return 'embeddings'
     
-    @lazyproperty
-    def root_name(self):
-        return 'embedding'
+    # @lazyproperty
+    # def root_name(self):
+    #     return 'embedding'
 
+    @overload
+    def create(
+        self, 
+        input: Optional[Union[str, List[str], List[List]]] = None,
+        model: Optional[str] = "text-embedding-ada-002",
+        user: Optional[str] = None,
+        auto_retry: Optional[bool] = False,
+        auto_retry_limit: Optional[int] = None,
+        **kwargs
+    ) -> EmbeddingResponse:
+        """
+        Creates a embedding response for the provided prompt and parameters
+
+        Usage:
+
+        ```python
+        >>> result = OpenAI.embedding.create(
+        >>>    input = 'say this is a test',
+        >>> )
+        ```
+
+        **Parameters:**
+
+        :input (string, array, required): Input text to embed, encoded as a string or array of tokens. To embed multiple inputs in a single request, pass an array of strings or array of token arrays. Each input must not exceed the max input tokens for the model (8191 tokens for text-embedding-ada-002). Example Python code for counting tokens.
+
+        :model (string, required): ID of the model to use. You can use the List models API to see all of your available models, or see our Model overview for descriptions of them.
+        Default: `text-embedding-ada-002`
+
+        :user (optional): A unique identifier representing your end-user, which can help OpenAI to 
+        monitor and detect abuse.
+        Default: `None`
+
+        Returns: `EmbeddingResponse`
+        """
+        ...
 
     def create(
         self, 
@@ -189,7 +226,42 @@ class EmbeddingRoute(BaseRoute):
                 _current_attempt = current_attempt,
                 **kwargs
             )
-    
+
+    @overload
+    async def async_create(
+        self, 
+        input: Optional[Union[str, List[str], List[List]]] = None,
+        model: Optional[str] = "text-embedding-ada-002",
+        user: Optional[str] = None,
+        auto_retry: Optional[bool] = False,
+        auto_retry_limit: Optional[int] = None,
+        **kwargs
+    ) -> EmbeddingResponse:
+        """
+        Creates a embedding response for the provided prompt and parameters
+
+        Usage:
+
+        ```python
+        >>> result = await OpenAI.embedding.async_create(
+        >>>    input = 'say this is a test',
+        >>> )
+        ```
+
+        **Parameters:**
+
+        :input (string, array, required): Input text to embed, encoded as a string or array of tokens. To embed multiple inputs in a single request, pass an array of strings or array of token arrays. Each input must not exceed the max input tokens for the model (8191 tokens for text-embedding-ada-002). Example Python code for counting tokens.
+
+        :model (string, required): ID of the model to use. You can use the List models API to see all of your available models, or see our Model overview for descriptions of them.
+        Default: `text-embedding-ada-002`
+
+        :user (optional): A unique identifier representing your end-user, which can help OpenAI to 
+        monitor and detect abuse.
+        Default: `None`
+
+        Returns: `EmbeddingResponse`
+        """
+        ...
 
     async def async_create(
         self, 

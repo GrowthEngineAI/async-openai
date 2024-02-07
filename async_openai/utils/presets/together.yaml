@@ -1,0 +1,60 @@
+# Configuration for together.xyz External Provider
+name: together
+config:
+  api_base: https://api.together.xyz
+  api_path: /v1
+  api_key_header: Authorization
+  api_key_scheme: Bearer 
+  api_key: env/TOGETHER_API_KEY
+  hf_compatible: true
+routes:
+  chat:
+    object_class: async_openai.schemas.external.together.chat.ChatObject
+    response_class: async_openai.schemas.external.together.chat.ChatResponse
+    route_class: async_openai.schemas.external.together.chat.ChatRoute
+# routes:
+#   completion: 
+#     path: /complete
+#     params:
+#       model: str
+#       prompt: str
+#       max_tokens: int
+#       ...
+models:
+- name: mistralai/Mixtral-8x7B-Instruct-v0.1
+  aliases:
+  - mixtral-8x7b
+  - mixtral-8x7b-instruct
+  context_length: 32768
+  costs: 
+    unit: 1_000_000
+    input: 0.6
+    output: 0.6
+  endpoints:
+  - chat
+  - completion
+- name: mistralai/Mistral-7B-Instruct-v0.1
+  aliases:
+  - mistral-7b-instruct-v1
+  context_length: 4096
+  costs: 
+    unit: 1_000_000
+    input: 0.2
+    output: 0.2
+  endpoints:
+  - chat
+  - completion
+- name: mistralai/Mistral-7B-Instruct-v0.2
+  aliases:
+  - mistral-7b-instruct-v2
+  context_length: 32768
+  costs: 
+    unit: 1_000_000
+    input: 0.2
+    output: 0.2
+  endpoints:
+  - chat
+  - completion
+
+
+

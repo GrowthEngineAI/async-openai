@@ -19,6 +19,7 @@ requirements = [
     'lazyops >= 0.2.72', # Pydantic Support
     'pydantic',
     'jinja2',
+    'pyyaml',
     # 'pydantic-settings', # remove to allow for v1/v2 support
 ]
 

@@ -1,5 +1,5 @@
 from typing import Optional, Type, Any, Union, List, Dict
-from lazyops.types import validator, lazyproperty
+from lazyops.types import validator, lazyproperty, Field
 
 from async_openai.types.options import OpenAIModel
 from async_openai.types.resources import BaseResource
@@ -61,9 +61,11 @@ class EditRoute(BaseRoute):
     input_model: Optional[Type[BaseResource]] = EditObject
     response_model: Optional[Type[BaseResource]] = EditResponse
 
-    @lazyproperty
-    def api_resource(self):
-        return 'edits'
+    api_resource: Optional[str] = Field(default = 'edits')
+
+    # @lazyproperty
+    # def api_resource(self):
+    #     return 'edits'
 
     def create(
         self, 

@@ -12,6 +12,7 @@ from async_openai.types.options import ApiType
 
 _should_reset_api: bool = False
 
+
 def configure_httpx_logger(level: int = logging.ERROR):
     """
     Helper Method to Disable HTTPX Logger
@@ -39,6 +40,8 @@ class OpenAIContext(BaseModel):
             if isinstance(v, (int, float, type(None))):
                 headers[k] = str(v)
         self.custom_headers.update(headers)
+
+
 
 
 class OpenAIAuth(aiohttpx.Auth):
@@ -512,7 +515,12 @@ class OpenAIProxySettings(BaseSettings):
         Loads the Proxy Configuration from a File
         """
         if not path.exists(): return
-        data: Dict[str, Union[Dict[str, str], str]] = json.loads(path.read_text())
+        text = path.read_text()
+        if 'env/' in text:
+            from lazyops.libs.abcs.utils.envvars import parse_envvars_from_text
+            text, _ = parse_envvars_from_text(text)
+        
+        data: Dict[str, Union[Dict[str, str], str]] = json.loads(text)
         for k, v in data.items():
             if v is None: continue
             if k in {'endpoint', 'enabled'}: k = f'proxy_{k}'
@@ -634,7 +642,11 @@ class OpenAISettings(BaseOpenAISettings):
         Loads the Client Configurations
         """
         if not path.exists(): return
-        data: Dict[str, Dict[str, Any]] = json.loads(path.read_text())
+        text = path.read_text()
+        if 'env/' in text:
+            from lazyops.libs.abcs.utils.envvars import parse_envvars_from_text
+            text, _ = parse_envvars_from_text(text)
+        data: Dict[str, Dict[str, Any]] = json.loads(text)
         self.client_configurations.update(data)
 
     def configure(
