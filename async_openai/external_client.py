@@ -23,6 +23,8 @@ class ExternalOpenAIClient(abc.ABC):
     External Client for all the routes in the API.
     """
 
+    is_azure: bool = False
+
     _client: Optional[aiohttpx.Client] = None
     _routes: Optional[ApiRoutes] = None
     _kwargs: Optional[Dict] = None

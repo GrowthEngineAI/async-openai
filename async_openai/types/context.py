@@ -158,7 +158,7 @@ class ModelCostHandlerClass(abc.ABC):
         """
         Gets a model by name
         """
-        if '/' in key: return self.get_external_model(key)
+        if '/' in key or key in self.external_model_aliases: return self.get_external_model(key)
         if key not in self.model_aliases and key not in self.models:
             return self.models[self.resolve_model_name(key)]
         if key in self.model_aliases:
@@ -215,7 +215,7 @@ class ModelCostHandlerClass(abc.ABC):
         tokenizer_name = model.tokenizer or model.name
         if tokenizer_name not in self.external_tokenizers:
             try:
-                from transformers import AutoTokenizer
+                from transformers.models.auto.tokenization_auto import AutoTokenizer
             except ImportError as e:
                 raise ImportError("transformers is not installed, please install it to use this feature") from e            
             tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)

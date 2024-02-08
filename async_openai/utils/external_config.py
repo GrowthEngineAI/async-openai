@@ -306,7 +306,9 @@ class ExternalProviderSettings(BaseModel):
             import yaml
             data = yaml.safe_load(text)
         
-        if overrides: data.update(overrides)
+        if overrides: 
+            from lazyops.libs.abcs.utils.helpers import update_dict
+            data = update_dict(data, overrides)
         provider_settings = cls.parse_obj(data)
         ModelContextHandler.add_provider(provider_settings)
         return provider_settings

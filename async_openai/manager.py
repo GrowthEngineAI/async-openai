@@ -362,6 +362,8 @@ class OpenAIManager(abc.ABC):
             self.external_model_to_client[provider_model_name] = client.name
             if model_name not in self.external_model_to_client or set_as_default:
                 self.external_model_to_client[model_name] = client.name
+        
+        # logger.info(f'Configured External Models: {list(self.external_model_to_client.keys())}')
 
     
     def init_external_api_client(
@@ -421,12 +423,14 @@ class OpenAIManager(abc.ABC):
         client_name: Optional[str] = None,
         set_as_default: Optional[bool] = False,
         disable_proxy: Optional[bool] = None,
+        overrides: Optional[Dict[str, Any]] = None,
         **kwargs
     ) -> 'ExternalOpenAIClient':
         """
         Initializes an external OpenAI client from a preset
         """
-        provider = ExternalProviderSettings.from_preset(name = preset_name, path = preset_path)
+        overrides = overrides or {}
+        provider = ExternalProviderSettings.from_preset(name = preset_name, path = preset_path, **overrides)
         return self.init_external_api_client(
             provider = provider, 
             client_name = client_name, 

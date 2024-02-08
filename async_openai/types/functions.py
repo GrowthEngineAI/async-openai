@@ -182,8 +182,9 @@ class BaseFunction(ABC):
         This gets initialized from the Enrichment Handler
         """
         from async_openai.manager import ModelContextHandler
+        from async_openai.types.context import ModelCostHandlerClass
         from async_openai.utils.logs import logger, null_logger
-        self.ctx: Type['ModelContextHandler'] = ModelContextHandler
+        self.ctx: ModelCostHandlerClass = ModelContextHandler
         if api is None:
             from async_openai.client import OpenAIManager
             api = OpenAIManager
