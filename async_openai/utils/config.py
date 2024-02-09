@@ -725,7 +725,7 @@ class OpenAISettings(BaseOpenAISettings):
         Validates the app environment
         """
         if value is None:
-            from lazyops.libs.abcs.configs.base import get_app_env
+            from lazyops.libs.abcs.configs.types import get_app_env
             return get_app_env(cls.__module__)
         return AppEnv.from_env(value) if isinstance(value, str) else value
 
