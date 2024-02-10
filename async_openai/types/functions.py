@@ -505,6 +505,9 @@ class BaseFunction(ABC):
             result = schema.model_validate(response.function_results[0].arguments, from_attributes = True)
             result._set_values_from_response(response, name = self.name if include_name else None)
             return result
+        except IndexError as e:
+            self.autologger.error(f"[{self.name} - {response.model} - {response.usage}] No function results found: {e}\n{response.text}")
+            return None
         except Exception as e:
             self.autologger.error(f"[{self.name} - {response.model} - {response.usage}] Failed to parse object: {e}\n{response.text}\n{response.function_results[0].arguments}")
             try:
@@ -688,6 +691,7 @@ class BaseFunction(ABC):
                 chat = chat,
                 messages = messages,
                 model = model,
+                cachable = False,
                 **kwargs,
             )
             result = self.parse_response(response, include_name = True)
@@ -698,7 +702,8 @@ class BaseFunction(ABC):
             name = self.name, 
             func_name = self.name,
             model = model,
-            attempts = self.max_attempts,
+            attempts = attempts,
+            max_attempts = self.max_attempts,
         )
         return None
 
@@ -732,6 +737,7 @@ class BaseFunction(ABC):
                 chat = chat,
                 messages = messages,
                 model = model,
+                cachable = False,
                 **kwargs,
             )
             result = self.parse_response(response, include_name = True)
@@ -742,7 +748,8 @@ class BaseFunction(ABC):
             name = self.name, 
             func_name = self.name,
             model = model,
-            attempts = self.max_attempts,
+            attempts = attempts,
+            max_attempts = self.max_attempts,
         )
         return None
 
