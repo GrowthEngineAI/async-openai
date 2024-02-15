@@ -367,9 +367,9 @@ class ExternalProviderAuth(aiohttpx.Auth):
         """
         if self.config.has_api_keys:
             if len(self.config.api_keys) == 1:
-                return self.config.api_keys[0]
-            return random.choice(self.config.api_keys)
-        return self.config.api_key
+                return self.config.api_keys_value[0]
+            return random.choice(self.config.api_keys_value)
+        return self.config.api_key_value
     
     @property
     def has_api_key(self) -> bool:

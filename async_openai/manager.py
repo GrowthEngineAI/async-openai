@@ -383,6 +383,7 @@ class OpenAIManager(abc.ABC):
         from async_openai.external_client import ExternalOpenAIClient
         if 'client_callbacks' not in kwargs and self.client_callbacks:
             kwargs['client_callbacks'] = self.client_callbacks
+        extra = ''
         if not disable_proxy and provider.config.has_proxy:
             # Configure the proxy version of the client
             client = ExternalOpenAIClient(
@@ -403,6 +404,7 @@ class OpenAIManager(abc.ABC):
                 **kwargs
             )
             self.configure_external_client(non_proxy_client, set_as_default = False)
+            extra += ' Proxied,'
         else:
             client = ExternalOpenAIClient(
                 name = client_name,
@@ -412,7 +414,10 @@ class OpenAIManager(abc.ABC):
                 **kwargs
             )
             self.configure_external_client(client, set_as_default = set_as_default)
-        logger.info(f'Registered `|g|{client.name}|e|` @ `{client.provider.config.api_url}` (External - {client.provider.name})', colored = True)
+        if client.provider.config.has_api_keys:
+            extra += f' Multiple API Keys: {len(client.provider.config.api_keys)},'
+        extra = extra.strip().rstrip(',')
+        logger.info(f'Registered `|g|{client.name}|e|` @ `{client.provider.config.api_url}` (External: |g|{client.provider.name}|e|, {extra})', colored = True)
         return client
 
 
