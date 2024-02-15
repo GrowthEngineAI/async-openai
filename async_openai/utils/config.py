@@ -520,7 +520,17 @@ class OpenAIProxySettings(BaseSettings):
             from lazyops.libs.abcs.utils.envvars import parse_envvars_from_text
             text, _ = parse_envvars_from_text(text)
         
-        data: Dict[str, Union[Dict[str, str], str]] = json.loads(text)
+        assert path.suffix in {
+            ".yaml", ".yml", ".json"
+        }, f"The preset file must be a YAML or JSON file: {path}"
+        
+        data: Dict[str, Union[Dict[str, str], str]] = {}
+
+        if path.suffix == ".json":
+            data = json.loads(text)
+        else:
+            import yaml
+            data = yaml.safe_load(text)
         for k, v in data.items():
             if v is None: continue
             if k in {'endpoint', 'enabled'}: k = f'proxy_{k}'
@@ -646,7 +656,16 @@ class OpenAISettings(BaseOpenAISettings):
         if 'env/' in text:
             from lazyops.libs.abcs.utils.envvars import parse_envvars_from_text
             text, _ = parse_envvars_from_text(text)
-        data: Dict[str, Dict[str, Any]] = json.loads(text)
+        assert path.suffix in {
+            ".yaml", ".yml", ".json"
+        }, f"The preset file must be a YAML or JSON file: {path}"
+        
+        data: Dict[str, Union[Dict[str, str], str]] = {}
+        if path.suffix == ".json":
+            data = json.loads(text)
+        else:
+            import yaml
+            data = yaml.safe_load(text)
         self.client_configurations.update(data)
 
     def configure(

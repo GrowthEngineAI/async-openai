@@ -1,6 +1,7 @@
 import json
 import pathlib
 import aiohttpx
+import random
 from typing import Optional, Dict, Union, Any, List, Type, TYPE_CHECKING
 from lazyops.types import BaseSettings, validator, BaseModel, lazyproperty, Field, PYD_VERSION
 from lazyops.libs.proxyobj import ProxyObject
@@ -30,6 +31,7 @@ class ExternalProviderConfig(BaseModel):
     api_key_header: Optional[str] = Field(None, description="The header for the API Key")
     api_key_scheme: Optional[str] = Field(None, description="The scheme for the API Key")
     api_key: Optional[str] = Field(None, description="The API Key")
+    api_keys: Optional[List[str]] = Field(None, description="The API Keys")
 
     custom_headers: Optional[Dict[str, str]] = Field(None, description="Custom Headers")
     proxy_url: Optional[str] = Field(None, description="The Proxy URL")
@@ -59,6 +61,21 @@ class ExternalProviderConfig(BaseModel):
         if not self.has_api_key: return None
         return f"{self.api_key_scheme} {self.api_key}" if self.api_key_scheme else self.api_key
     
+    @property
+    def has_api_keys(self) -> bool:
+        """
+        Returns whether the API Keys are present
+        """
+        return self.api_keys is not None
+    
+    @property
+    def api_keys_value(self) -> Optional[List[str]]:
+        """
+        Returns the API Keys Value
+        """
+        if not self.has_api_keys: return None
+        return [f"{self.api_key_scheme} {k}" if self.api_key_scheme else k for k in self.api_keys]
+
     @property
     def has_proxy(self) -> bool:
         """
@@ -344,12 +361,29 @@ class ExternalProviderAuth(aiohttpx.Auth):
         self.config = config
         self.is_proxied = is_proxied
 
+    def get_api_key(self) -> Optional[str]:
+        """
+        Returns the API Key
+        """
+        if self.config.has_api_keys:
+            if len(self.config.api_keys) == 1:
+                return self.config.api_keys[0]
+            return random.choice(self.config.api_keys)
+        return self.config.api_key
+    
+    @property
+    def has_api_key(self) -> bool:
+        """
+        Returns whether the API Key is present
+        """
+        return self.config.has_api_key or self.config.has_api_keys
+
     def auth_flow(self, request):
         """
         Injects the API Key into the Request
         """
-        if self.config.has_api_key and self.config.api_key_header not in request.headers:
-            request.headers[self.config.api_key_header] = self.config.api_key_value
+        if self.has_api_key and self.config.api_key_header not in request.headers:
+            request.headers[self.config.api_key_header] = self.get_api_key()
         if self.config.custom_headers:
             request.headers.update(self.config.custom_headers)
         if self.is_proxied and self.config.proxy_headers:
@@ -360,8 +394,8 @@ class ExternalProviderAuth(aiohttpx.Auth):
         """
         Injects the API Key into the Request
         """
-        if self.config.has_api_key and self.config.api_key_header not in request.headers:
-            request.headers[self.config.api_key_header] = self.config.api_key_value
+        if self.has_api_key and self.config.api_key_header not in request.headers:
+            request.headers[self.config.api_key_header] = self.get_api_key()
         if self.config.custom_headers:
             request.headers.update(self.config.custom_headers)
         if self.is_proxied and self.config.proxy_headers:

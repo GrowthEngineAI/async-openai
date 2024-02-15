@@ -8,6 +8,8 @@
 
 - Rework of `api_resource` and `root_name` in `Route` objects to be settable during initialization. This is to allow for flexibility for external providers.
 
+- Added capability to have multi-api-key support for external providers, allowing for automatic rotation between api keys.
+
 #### v0.0.50 (2024-02-01)
 
 **Breaking Changes**

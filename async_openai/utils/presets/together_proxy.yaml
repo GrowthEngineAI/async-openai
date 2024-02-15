@@ -5,6 +5,7 @@ config:
   api_path: /v1
   api_key_header: Authorization
   api_key_scheme: Bearer 
+  api_keys: env/TOGETHER_API_KEYS
   api_key: env/TOGETHER_API_KEY
   hf_compatible: true
   proxy_url: https://gateway.hconeai.com/v1
