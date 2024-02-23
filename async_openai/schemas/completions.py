@@ -321,8 +321,10 @@ class CompletionRoute(BaseRoute):
         self, 
         input_object: Optional[CompletionObject] = None,
         parse_stream: Optional[bool] = True,
+        timeout: Optional[int] = None,
         auto_retry: Optional[bool] = False,
         auto_retry_limit: Optional[int] = None,
+        header_cache_keys: Optional[List[str]] = None,
         **kwargs
     ) -> CompletionResponse:
         """
@@ -435,69 +437,25 @@ class CompletionRoute(BaseRoute):
 
         Returns: `CompletionResult`
         """
-        current_attempt = kwargs.pop('_current_attempt', 0)
-        if not auto_retry:
-            return super().create(input_object = input_object, parse_stream = parse_stream, **kwargs)
-        
-        # Handle Auto Retry Logic
-        if not auto_retry_limit: auto_retry_limit = self.settings.max_retries
-        try:
-            return super().create(input_object = input_object, parse_stream = parse_stream, **kwargs)
-        except RateLimitError as e:
-            if current_attempt >= auto_retry_limit:
-                raise MaxRetriesExceeded(name = self.name, attempts = current_attempt, base_exception = e) from e
-            sleep_interval = e.retry_after_seconds * 1.5 if e.retry_after_seconds else 15.0
-            logger.warning(f'[{self.name}: {current_attempt}/{auto_retry_limit}] Rate Limit Error. Sleeping for {sleep_interval} seconds')
-            time.sleep(sleep_interval)
-            current_attempt += 1
-            return self.create(
-                input_object = input_object,
-                parse_stream = parse_stream,
-                auto_retry = auto_retry,
-                auto_retry_limit = auto_retry_limit,
-                _current_attempt = current_attempt,
-                **kwargs
-            )
-        except APIError as e:
-            if current_attempt >= auto_retry_limit:
-                raise MaxRetriesExceeded(name = self.name, attempts = current_attempt, base_exception = e) from e
-            logger.warning(f'[{self.name}: {current_attempt}/{auto_retry_limit}] API Error: {e}. Sleeping for 10 seconds')
-            time.sleep(10.0)
-            current_attempt += 1
-            return self.create(
-                input_object = input_object,
-                parse_stream = parse_stream,
-                auto_retry = auto_retry,
-                auto_retry_limit = auto_retry_limit,
-                _current_attempt = current_attempt,
-                **kwargs
-            )
-
-        except (InvalidMaxTokens, InvalidRequestError) as e:
-            raise e
-        
-        except Exception as e:
-            if current_attempt >= auto_retry_limit:
-                raise MaxRetriesExceeded(name = self.name, attempts = current_attempt, base_exception = e) from e
-            logger.warning(f'[{self.name}: {current_attempt}/{auto_retry_limit}] Unknown Error: {e}. Sleeping for 10 seconds')
-            time.sleep(10.0)
-            current_attempt += 1
-            return self.create(
-                input_object = input_object,
-                parse_stream = parse_stream,
-                auto_retry = auto_retry,
-                auto_retry_limit = auto_retry_limit,
-                _current_attempt = current_attempt,
-                **kwargs
-            )
+        return super().create(
+            input_object = input_object,
+            parse_stream = parse_stream,
+            timeout = timeout,
+            auto_retry = auto_retry,
+            auto_retry_limit = auto_retry_limit,
+            header_cache_keys = header_cache_keys,
+            **kwargs
+        )
 
 
     async def async_create(
         self, 
         input_object: Optional[CompletionObject] = None,
         parse_stream: Optional[bool] = True,
+        timeout: Optional[int] = None,
         auto_retry: Optional[bool] = False,
         auto_retry_limit: Optional[int] = None,
+        header_cache_keys: Optional[List[str]] = None,
         **kwargs
     ) -> CompletionResponse:
         """
@@ -610,63 +568,13 @@ class CompletionRoute(BaseRoute):
 
         Returns: `CompletionResult`
         """
-        
-        current_attempt = kwargs.pop('_current_attempt', 0)
-        if not auto_retry:
-            return await super().async_create(input_object = input_object, parse_stream = parse_stream,  **kwargs)
-
-        # Handle Auto Retry Logic
-        if not auto_retry_limit: auto_retry_limit = self.settings.max_retries
-        try:
-            return await super().async_create(input_object = input_object, parse_stream = parse_stream, **kwargs)
-        except RateLimitError as e:
-            if current_attempt >= auto_retry_limit:
-                raise MaxRetriesExceeded(name = self.name, attempts = current_attempt, base_exception = e) from e
-            sleep_interval = e.retry_after_seconds * 1.5 if e.retry_after_seconds else 15.0
-            logger.warning(f'[{self.name}: {current_attempt}/{auto_retry_limit}] Rate Limit Error. Sleeping for {sleep_interval} seconds')
-            await asyncio.sleep(sleep_interval)
-            current_attempt += 1
-            return await self.async_create(
-                input_object = input_object,
-                parse_stream = parse_stream,
-                auto_retry = auto_retry,
-                auto_retry_limit = auto_retry_limit,
-                _current_attempt = current_attempt,
-                **kwargs
-            )
-        
-        except APIError as e:
-            if current_attempt >= auto_retry_limit:
-                raise MaxRetriesExceeded(name = self.name, attempts = current_attempt, base_exception = e) from e
-            logger.warning(f'[{self.name}: {current_attempt}/{auto_retry_limit}] API Error: {e}. Sleeping for 10 seconds')
-            await asyncio.sleep(10.0)
-            current_attempt += 1
-            return await self.async_create(
-                input_object = input_object,
-                parse_stream = parse_stream,
-                auto_retry = auto_retry,
-                auto_retry_limit = auto_retry_limit,
-                _current_attempt = current_attempt,
-                **kwargs
-            )
-
-        except (InvalidMaxTokens, InvalidRequestError) as e:
-            raise e
-        
-        except Exception as e:
-            if current_attempt >= auto_retry_limit:
-                raise MaxRetriesExceeded(name = self.name, attempts = current_attempt, base_exception = e) from e
-            logger.warning(f'[{self.name}: {current_attempt}/{auto_retry_limit}] Unknown Error: {e}. Sleeping for 10 seconds')
-            await asyncio.sleep(10.0)
-            current_attempt += 1
-            return await self.async_create(
-                input_object = input_object,
-                parse_stream = parse_stream,
-                auto_retry = auto_retry,
-                auto_retry_limit = auto_retry_limit,
-                _current_attempt = current_attempt,
-                **kwargs
-            )
-
-
+        return await super().async_create(
+            input_object = input_object,
+            parse_stream = parse_stream,
+            timeout = timeout,
+            auto_retry = auto_retry,
+            auto_retry_limit = auto_retry_limit,
+            header_cache_keys = header_cache_keys,
+            **kwargs
+        )
     

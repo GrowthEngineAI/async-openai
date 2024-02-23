@@ -1,4 +1,6 @@
 import json
+import time
+import asyncio
 import aiohttpx
 import backoff
 import functools
@@ -8,7 +10,7 @@ from typing import Dict, Optional, Any, List, Type, Callable, Union
 
 from async_openai.utils.logs import logger
 from async_openai.utils.config import get_settings, get_default_headers, get_max_retries, OpenAISettings, AzureOpenAISettings
-from async_openai.types.errors import fatal_exception, error_handler
+from async_openai.types.errors import fatal_exception, error_handler, RateLimitError, APIError, InvalidMaxTokens, InvalidRequestError, MaxRetriesExceeded
 from async_openai.types.resources import BaseResource, FileResource
 from async_openai.types.responses import BaseResponse
 
@@ -187,9 +189,9 @@ class BaseRoute(BaseModel):
             cls = ObjectEncoder
         )
 
-    def create(
+    def _create(
         self, 
-        input_object: Optional[Type[BaseResource]] = None,
+        input_object: Optional[BaseResource] = None,
         headers: Optional[Dict[str, str]] = None,
         parse_stream: Optional[bool] = True,
         timeout: Optional[int] = None,
@@ -222,10 +224,101 @@ class BaseRoute(BaseModel):
         data = self.handle_response(api_response)
         return self.prepare_response(data, input_object = input_object, parse_stream = parse_stream)
     
+    def create(
+        self,
+        input_object: Optional[BaseResource] = None,
+        headers: Optional[Dict[str, str]] = None,
+        timeout: Optional[int] = None,
+        auto_retry: Optional[bool] = False,
+        auto_retry_limit: Optional[int] = None,
+        header_cache_keys: Optional[List[str]] = None,
+        **kwargs
+    ) -> BaseResponse:  # sourcery skip: low-code-quality
+        """
+        Handles the Retryable Create
+        """
+        if self.is_azure and self.azure_model_mapping and kwargs.get('model') and kwargs['model'] in self.azure_model_mapping:
+            kwargs['model'] = self.azure_model_mapping[kwargs['model']]
 
-    async def async_create(
+        current_attempt = kwargs.pop('_current_attempt', 0)
+        if not auto_retry:
+            return self._create(input_object = input_object, timeout = timeout, headers = headers, **kwargs)
+        
+        # Handle Auto Retry Logic
+        current_model = kwargs.get('model', input_object.model if input_object else None)
+        if not auto_retry_limit: auto_retry_limit = self.settings.max_retries
+        try:
+            return self._create(input_object = input_object, timeout = timeout, headers = headers, **kwargs)
+        except RateLimitError as e:
+            if current_attempt >= auto_retry_limit:
+                raise MaxRetriesExceeded(name = self.name, attempts = current_attempt, base_exception = e) from e
+            sleep_interval = e.retry_after_seconds * 1.5 if e.retry_after_seconds else 15.0
+            logger.warning(f'[{self.name} - {current_model}: {current_attempt}/{auto_retry_limit}] Rate Limit Error. Sleeping for {sleep_interval} seconds')
+            time.sleep(sleep_interval)
+            current_attempt += 1
+            return self.create(
+                input_object = input_object,
+                headers = headers,
+                timeout = timeout,
+                auto_retry = auto_retry,
+                auto_retry_limit = auto_retry_limit,
+                _current_attempt = current_attempt,
+                **kwargs
+            )
+        
+        except APIError as e:
+            if current_attempt >= auto_retry_limit:
+                raise MaxRetriesExceeded(name = self.name, attempts=current_attempt, base_exception = e) from e
+            logger.warning(f'[{self.name} - {current_model}: {current_attempt}/{auto_retry_limit}] API Error: {e}. Sleeping for 10 seconds')
+            time.sleep(10.0)
+            current_attempt += 1
+            if header_cache_keys and headers:
+                # headers = kwargs.pop('headers')
+                _ = [headers.pop(k) for k in header_cache_keys if k in headers]
+                # kwargs['headers'] = headers
+            return self.create(
+                input_object = input_object,
+                headers = headers,
+                timeout = timeout,
+                auto_retry = auto_retry,
+                auto_retry_limit = auto_retry_limit,
+                _current_attempt = current_attempt,
+                **kwargs
+            )
+        
+        except (InvalidMaxTokens, InvalidRequestError) as e:
+            raise e
+        
+        except Exception as e:
+            if current_attempt >= auto_retry_limit:
+                raise MaxRetriesExceeded(name = self.name, attempts = current_attempt, base_exception = e) from e
+            
+            error_value = str(e)
+            error_kind = 'Unknown Error'
+            # Truncate the error value if it's too long
+            if '<!DOCTYPE html> ' in error_value or '</head>' in error_value:
+                error_kind = 'HTML Error'
+                error_value = error_value[:500]
+            logger.warning(f'[{self.name} - {current_model}: {current_attempt}/{auto_retry_limit}] {error_kind}: ({type(e)}) {error_value}. Sleeping for 10 seconds')
+            time.sleep(10.0)
+            current_attempt += 1
+            if header_cache_keys and headers:
+                # headers = kwargs.pop('headers')
+                _ = [headers.pop(k) for k in header_cache_keys if k in headers]
+                # kwargs['headers'] = headers
+            return self.create(
+                input_object = input_object,
+                headers = headers,
+                timeout = timeout, 
+                auto_retry = auto_retry,
+                auto_retry_limit = auto_retry_limit,
+                _current_attempt = current_attempt,
+                **kwargs
+            )
+
+    async def _async_create(
         self, 
-        input_object: Optional[Type[BaseResource]] = None,
+        input_object: Optional[BaseResource] = None,
         headers: Optional[Dict[str, str]] = None,
         parse_stream: Optional[bool] = True,
         timeout: Optional[int] = None,
@@ -260,6 +353,100 @@ class BaseRoute(BaseModel):
         data = self.handle_response(api_response)
         return await self.aprepare_response(data, input_object = input_object, parse_stream = parse_stream)
     
+    async def async_create(
+        self,
+        input_object: Optional[BaseResource] = None,
+        headers: Optional[Dict[str, str]] = None,
+        timeout: Optional[int] = None,
+        auto_retry: Optional[bool] = False,
+        auto_retry_limit: Optional[int] = None,
+        header_cache_keys: Optional[List[str]] = None,
+        **kwargs
+    ) -> BaseResponse:  # sourcery skip: low-code-quality
+        """
+        Handles the Retryable Create
+        """
+        if self.is_azure and self.azure_model_mapping and kwargs.get('model') and kwargs['model'] in self.azure_model_mapping:
+            kwargs['model'] = self.azure_model_mapping[kwargs['model']]
+
+        current_attempt = kwargs.pop('_current_attempt', 0)
+        if not auto_retry:
+            return await self._async_create(input_object = input_object, timeout = timeout, headers = headers, **kwargs)
+        
+        # Handle Auto Retry Logic
+        current_model = kwargs.get('model', input_object.model if input_object else None)
+        if not auto_retry_limit: auto_retry_limit = self.settings.max_retries
+        try:
+            return await self._async_create(input_object = input_object, timeout = timeout, headers = headers, **kwargs)
+        except RateLimitError as e:
+            if current_attempt >= auto_retry_limit:
+                raise MaxRetriesExceeded(name = self.name, attempts = current_attempt, base_exception = e) from e
+            sleep_interval = e.retry_after_seconds * 1.5 if e.retry_after_seconds else 15.0
+            logger.warning(f'[{self.name} - {current_model}: {current_attempt}/{auto_retry_limit}] Rate Limit Error. Sleeping for {sleep_interval} seconds')
+            await asyncio.sleep(sleep_interval)
+            current_attempt += 1
+            return await self.async_create(
+                input_object = input_object,
+                headers = headers,
+                timeout = timeout,
+                auto_retry = auto_retry,
+                auto_retry_limit = auto_retry_limit,
+                _current_attempt = current_attempt,
+                **kwargs
+            )
+        
+        except APIError as e:
+            if current_attempt >= auto_retry_limit:
+                raise MaxRetriesExceeded(name = self.name, attempts=current_attempt, base_exception = e) from e
+            logger.warning(f'[{self.name} - {current_model}: {current_attempt}/{auto_retry_limit}] API Error: {e}. Sleeping for 10 seconds')
+            await asyncio.sleep(10.0)
+            current_attempt += 1
+            if header_cache_keys and headers:
+                # headers = kwargs.pop('headers')
+                _ = [headers.pop(k) for k in header_cache_keys if k in headers]
+                # kwargs['headers'] = headers
+            return await self.async_create(
+                input_object = input_object,
+                headers = headers,
+                timeout = timeout,
+                auto_retry = auto_retry,
+                auto_retry_limit = auto_retry_limit,
+                _current_attempt = current_attempt,
+                **kwargs
+            )
+        
+        except (InvalidMaxTokens, InvalidRequestError) as e:
+            raise e
+        
+        except Exception as e:
+            if current_attempt >= auto_retry_limit:
+                raise MaxRetriesExceeded(name = self.name, attempts = current_attempt, base_exception = e) from e
+            
+            error_value = str(e)
+            error_kind = 'Unknown Error'
+            # Truncate the error value if it's too long
+            if '<!DOCTYPE html> ' in error_value or '</head>' in error_value:
+                error_kind = 'HTML Error'
+                error_value = error_value[:500]
+            logger.warning(f'[{self.name} - {current_model}: {current_attempt}/{auto_retry_limit}] {error_kind}: ({type(e)}) {error_value}. Sleeping for 10 seconds')
+            await asyncio.sleep(10.0)
+            current_attempt += 1
+            if header_cache_keys and headers:
+                # headers = kwargs.pop('headers')
+                _ = [headers.pop(k) for k in header_cache_keys if k in headers]
+                # kwargs['headers'] = headers
+            return await self.async_create(
+                input_object = input_object,
+                headers = headers,
+                timeout = timeout, 
+                auto_retry = auto_retry,
+                auto_retry_limit = auto_retry_limit,
+                _current_attempt = current_attempt,
+                **kwargs
+            )
+
+            
+
     acreate = async_create
     
     def batch_create(

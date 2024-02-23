@@ -100,6 +100,7 @@ class BaseResource(BaseModel):
         model_id: Optional[str]
         completion_id: Optional[str]
         openai_id: Optional[str]
+        model: Optional[str]
 
 
     @lazyproperty
