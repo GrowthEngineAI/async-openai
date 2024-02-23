@@ -747,6 +747,7 @@ class OpenAIManager(abc.ABC):
         else: client_names = self.external_client_names
         if noproxy_required: client_names = [c for c in client_names if 'noproxy' in c]
         else: client_names = [c for c in client_names if 'noproxy' not in c]
+        # logger.info(f'External Clients: {client_names}')
         if excluded_clients: client_names = [c for c in client_names if c not in excluded_clients]
         return list(set(client_names))
 
@@ -1302,6 +1303,8 @@ class OpenAIManager(abc.ABC):
         model: Optional[str] = None,
         auto_retry: Optional[bool] = True,
         strip_newlines: Optional[bool] = False,
+        headers: Optional[Dict[str, str]] = None,
+        noproxy_required: Optional[bool] = False,
         **kwargs,
     ) -> List[List[float]]:
         """
@@ -1322,9 +1325,9 @@ class OpenAIManager(abc.ABC):
             **kwargs
         )
         if strip_newlines: inputs = [i.replace('\n', ' ').strip() for i in inputs]
-        client = self.get_client(model = model, **kwargs)
+        client = self.get_client(model = model, noproxy_required = noproxy_required, **kwargs)
         if not client.is_azure:
-            response = client.embeddings.create(input = inputs, model = model, auto_retry = auto_retry, **kwargs)
+            response = client.embeddings.create(input = inputs, model = model, auto_retry = auto_retry, headers = headers, **kwargs)
             return response.embeddings
 
         embeddings = []
@@ -1332,10 +1335,10 @@ class OpenAIManager(abc.ABC):
         # Azure has a limit of 5 inputs per request
         batches = split_into_batches(inputs, 5)
         for batch in batches:
-            response = client.embeddings.create(input = batch, model = model, auto_retry = auto_retry, **kwargs)
+            response = client.embeddings.create(input = batch, model = model, auto_retry = auto_retry, headers = headers, **kwargs)
             embeddings.extend(response.embeddings)
             # Shuffle the clients to load balance
-            client = self.get_client(model = model, azure_required = True, **kwargs)
+            client = self.get_client(model = model, azure_required = True, noproxy_required = noproxy_required, **kwargs)
         return embeddings
 
 
@@ -1345,6 +1348,8 @@ class OpenAIManager(abc.ABC):
         model: Optional[str] = None,
         auto_retry: Optional[bool] = True,
         strip_newlines: Optional[bool] = False,
+        headers: Optional[Dict[str, str]] = None,
+        noproxy_required: Optional[bool] = False,
         **kwargs,
     ) -> List[List[float]]:
         """
@@ -1365,9 +1370,9 @@ class OpenAIManager(abc.ABC):
             **kwargs
         )
         if strip_newlines: inputs = [i.replace('\n', ' ').strip() for i in inputs]
-        client = self.get_client(model = model, **kwargs)
+        client = self.get_client(model = model, noproxy_required = noproxy_required, **kwargs)
         if not client.is_azure:
-            response = await client.embeddings.async_create(input = inputs, model = model, auto_retry = auto_retry, **kwargs)
+            response = await client.embeddings.async_create(input = inputs, model = model, auto_retry = auto_retry, headers = headers, **kwargs)
             return response.embeddings
 
         embeddings = []
@@ -1375,10 +1380,10 @@ class OpenAIManager(abc.ABC):
         # Azure has a limit of 5 inputs per request
         batches = split_into_batches(inputs, 5)
         for batch in batches:
-            response = await client.embeddings.async_create(input = batch, model = model, auto_retry = auto_retry, **kwargs)
+            response = await client.embeddings.async_create(input = batch, model = model, auto_retry = auto_retry, headers = headers, **kwargs)
             embeddings.extend(response.embeddings)
             # Shuffle the clients to load balance
-            client = self.get_client(model = model, azure_required = True, **kwargs)
+            client = self.get_client(model = model, azure_required = True, noproxy_required = noproxy_required, **kwargs)
         return embeddings
 
     acreate_embeddings = async_create_embeddings

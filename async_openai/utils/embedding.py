@@ -27,6 +27,8 @@ def _initialize_distance_dict(*args, **kwargs) -> Dict[str, Callable[..., float]
     """
     return {
         "cosine": spatial.distance.cosine,
+        "euclidean": spatial.distance.euclidean,
+        "inner_product": lambda x, y: -np.dot(x, y),
         "L1": spatial.distance.cityblock,
         "L2": spatial.distance.euclidean,
         "Linf": spatial.distance.chebyshev,

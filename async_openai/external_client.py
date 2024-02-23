@@ -51,6 +51,7 @@ class ExternalOpenAIClient(abc.ABC):
 
         self.is_proxied = is_proxied if is_proxied is not None else \
            (self.provider.config.has_proxy and  '_noproxy' not in self.name)
+        # logger.info(f"External Provider Configured: {self.name} [Proxied: {self.is_proxied}]")
         
         self.settings: Optional[OpenAISettings] = kwargs.pop('settings', get_settings())
         self.client_callbacks: List[Callable] = []
@@ -151,6 +152,7 @@ class ExternalOpenAIClient(abc.ABC):
             },
             **extra_kwargs,
         )
+        # logger.info(f"External Configured: {self._client.base_url} [{self.name}]")
 
     def configure_routes(self, **kwargs):
         """

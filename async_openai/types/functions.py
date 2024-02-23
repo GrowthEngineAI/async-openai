@@ -410,6 +410,7 @@ class BaseFunction(ABC):
         functions = functions or self.functions
         try:
             if headers: chat.client.headers.update(headers)
+            function_call = "auto" if function_name and function_name == 'auto' else {'name': function_name or self.function_name or self.name}
             return await chat.async_create(
                 model = model,
                 messages = messages,
@@ -417,7 +418,7 @@ class BaseFunction(ABC):
                 headers = headers,
                 auto_retry = True,
                 auto_retry_limit = 2,
-                function_call = {'name': function_name or self.name},
+                function_call = function_call,
                 header_cache_keys = ['Helicone-Cache-Enabled'],
                 **kwargs,
             )
@@ -480,13 +481,14 @@ class BaseFunction(ABC):
                 headers.update(property_meta)
         if headers: chat.client.headers.update(headers)
         functions = functions or self.functions
+        function_call = "auto" if function_name and function_name == 'auto' else {'name': function_name or self.function_name or self.name}
         return chat.create(
             messages = messages,
             functions = functions,
             headers = headers,
             auto_retry = True,
             auto_retry_limit = self.retry_limit,
-            function_call = {'name': function_name or self.name},
+            function_call = function_call,
             header_cache_keys=['Helicone-Cache-Enabled'],
             **kwargs,
         )
