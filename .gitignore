@@ -24,3 +24,5 @@ async_openai/v1*
 tests/private_*
 !tests/
 tests/v2/private_*
+tests/v2/fireworks*
+tests/v2/together*
