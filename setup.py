@@ -16,7 +16,7 @@ requirements = [
     # 'file-io',
     'backoff',
     'tiktoken',
-    'lazyops >= 0.2.74', # Pydantic Support
+    'lazyops >= 0.2.76', # Pydantic Support
     'pydantic',
     'jinja2',
     'pyyaml',

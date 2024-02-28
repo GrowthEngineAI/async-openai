@@ -291,11 +291,13 @@ class ExternalOpenAIClient(abc.ABC):
         """
         Pings the API Endpoint to check if it's alive.
         """
-        with contextlib.suppress(Exception):
+        try:
             response = await self.client.async_get('/', timeout = timeout)
             data = response.json()
             # we should expect a 404 with a json response
             if data.get('error'): return True
+        except Exception as e:
+            logger.error(f"[{self.name}] API Ping Failed: {e}")
         return False
 
 

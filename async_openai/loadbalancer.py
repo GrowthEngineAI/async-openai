@@ -199,7 +199,6 @@ class ClientLoadBalancer:
             client_name = 'default'
         if client_name and client_name not in self.clients:
             self.clients[client_name] = self.init_api_client(client_name = client_name, **kwargs)
-
         if not client_name and require_azure:
             while not self.api.is_azure:
                 self.increase_rotate_index()
@@ -212,16 +211,23 @@ class ClientLoadBalancer:
         Initializes a new OpenAI client or Returns an existing one from a list of client names.
         """
         if not self.healthcheck:
-            name = random.choice(client_names)
+            name = self.manager.select_client_name_from_weights(client_names) if self.manager.has_client_weights else random.choice(client_names)
             return self.get_api_client(client_name = name, require_azure = require_azure, **kwargs)
+        available = []
         for client_name in client_names:
             if client_name not in self.clients:
                 self.clients[client_name] = self.init_api_client(client_name = client_name, **kwargs)
             if require_azure and not self.clients[client_name].is_azure:
                 continue
-            if not self.clients[client_name].ping():
+            if not self.clients[client_name].ping(**self.manager.get_client_ping_params(client_name)):
                 continue
-            return self.clients[client_name]
+            if not self.manager.has_client_weights: 
+                return self.clients[client_name]
+            available.append(client_name)
+            # return self.clients[client_name]
+        if available:
+            name = self.manager.select_client_name_from_weights(available)
+            return self.clients[name]
         raise ValueError(f'No healthy client found from: {client_names}')
     
     async def aget_api_client_from_list(self, client_names: List[str], require_azure: Optional[bool] = None, **kwargs) -> 'OpenAIClient':
@@ -229,16 +235,23 @@ class ClientLoadBalancer:
         Initializes a new OpenAI client or Returns an existing one from a list of client names.
         """
         if not self.healthcheck:
-            name = random.choice(client_names)
+            name = self.manager.select_client_name_from_weights(client_names) if self.manager.has_client_weights else random.choice(client_names)
             return self.get_api_client(client_name = name, require_azure = require_azure, **kwargs)
+        available = []
         for client_name in client_names:
             if client_name not in self.clients:
                 self.clients[client_name] = self.init_api_client(client_name = client_name, **kwargs)
             if require_azure and not self.clients[client_name].is_azure:
                 continue
-            if not await self.clients[client_name].aping():
+            if not await self.clients[client_name].aping(**self.manager.get_client_ping_params(client_name)):
                 continue
-            return self.clients[client_name]
+            if not self.manager.has_client_weights: 
+                return self.clients[client_name]
+            available.append(client_name)
+        
+        if available:
+            name = self.manager.select_client_name_from_weights(available)
+            return self.clients[name]
         raise ValueError(f'No healthy client found from: {client_names}')
 
     def __getitem__(self, key: Union[str, int]) -> 'OpenAIClient':

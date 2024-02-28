@@ -38,6 +38,7 @@ class BaseFunctionModel(BaseModel):
     function_name: Optional[str] = Field(None, hidden = True)
     function_model: Optional[str] = Field(None, hidden = True)
     function_duration: Optional[float] = Field(None, hidden = True)
+    function_client_name: Optional[str] = Field(None, hidden = True)
 
     if TYPE_CHECKING:
         function_usage: Optional[Usage]
@@ -98,6 +99,7 @@ class BaseFunctionModel(BaseModel):
         self,
         response: 'ChatResponse',
         name: Optional[str] = None,
+        client_name: Optional[str] = None,
         **kwargs
     ) -> 'BaseFunctionModel':
         """
@@ -107,6 +109,7 @@ class BaseFunctionModel(BaseModel):
         self.function_usage = response.usage
         if response.response_ms: self.function_duration = response.response_ms / 1000
         self.function_model = response.model
+        if client_name: self.function_client_name = client_name
 
     @property
     def function_cost(self) -> Optional[float]:
@@ -427,10 +430,10 @@ class BaseFunction(ABC):
                 **kwargs,
             )
         except errors.InvalidRequestError as e:
-            self.logger.info(f"[{current_attempt}/{self.retry_limit}] [{self.name} - {model}] Invalid Request Error. |r|{e}|e|", colored=True)
+            self.logger.info(f"[{current_attempt}/{self.retry_limit}] [{self.name} - {chat.name}:{model}] Invalid Request Error. |r|{e}|e|", colored=True)
             raise e
         except errors.MaxRetriesExceeded as e:
-            self.autologger.info(f"[{current_attempt}/{self.retry_limit}] [{self.name} - {model}] Retrying...", colored=True)
+            self.autologger.info(f"[{current_attempt}/{self.retry_limit}] [{self.name} - {chat.name}:{model}] Retrying...", colored=True)
             return await self.arun_chat_function(
                 messages = messages,
                 cachable = cachable,
@@ -445,7 +448,7 @@ class BaseFunction(ABC):
                 **kwargs,
             )
         except Exception as e:
-            self.autologger.info(f"[{current_attempt}/{self.retry_limit}] [{self.name} - {model}] Unknown Error Trying to run chat function: |r|{e}|e|", colored=True)
+            self.autologger.info(f"[{current_attempt}/{self.retry_limit}] [{self.name} - {chat.name}:{model}] Unknown Error Trying to run chat function: |r|{e}|e|", colored=True)
             return await self.arun_chat_function(
                 messages = messages,
                 cachable = cachable,
@@ -502,6 +505,7 @@ class BaseFunction(ABC):
         response: 'ChatResponse',
         schema: Optional[Type[FunctionSchemaT]] = None,
         include_name: Optional[bool] = True,
+        client_name: Optional[str] = None,
     ) -> Optional[FunctionSchemaT]:  # sourcery skip: extract-duplicate-method
         """
         Parses the response
@@ -509,7 +513,7 @@ class BaseFunction(ABC):
         schema = schema or self.schema
         try:
             result = schema.model_validate(response.function_results[0].arguments, from_attributes = True)
-            result._set_values_from_response(response, name = self.name if include_name else None)
+            result._set_values_from_response(response, name = self.name if include_name else None, client_name = client_name)
             return result
         except IndexError as e:
             self.autologger.error(f"[{self.name} - {response.model} - {response.usage}] No function results found: {e}\n{response.text}")
@@ -685,7 +689,7 @@ class BaseFunction(ABC):
             **kwargs,
         )
 
-        result = self.parse_response(response, include_name = True)
+        result = self.parse_response(response, include_name = True, client_name = chat.name)
         if result is not None: return result
 
         # Try Again
@@ -700,10 +704,10 @@ class BaseFunction(ABC):
                 cachable = False,
                 **kwargs,
             )
-            result = self.parse_response(response, include_name = True)
+            result = self.parse_response(response, include_name = True, client_name = chat.name)
             if result is not None: return result
             attempts += 1
-        self.autologger.error(f"Unable to parse the response for {self.name} after {self.max_attempts} attempts.")
+        self.autologger.error(f"[{chat.name}:{model}] Unable to parse the response for {self.name} after {self.max_attempts} attempts.")
         if raise_errors: raise errors.MaxRetriesExhausted(
             name = self.name, 
             func_name = self.name,
@@ -731,7 +735,7 @@ class BaseFunction(ABC):
             **kwargs,
         )
 
-        result = self.parse_response(response, include_name = True)
+        result = self.parse_response(response, include_name = True, client_name = chat.name)
         if result is not None: return result
 
         # Try Again
@@ -746,10 +750,10 @@ class BaseFunction(ABC):
                 cachable = False,
                 **kwargs,
             )
-            result = self.parse_response(response, include_name = True)
+            result = self.parse_response(response, include_name = True, client_name = chat.name)
             if result is not None: return result
             attempts += 1
-        self.autologger.error(f"Unable to parse the response for {self.name} after {self.max_attempts} attempts.")
+        self.autologger.error(f"[{chat.name}:{model}] Unable to parse the response for {self.name} after {self.max_attempts} attempts.")
         if raise_errors: raise errors.MaxRetriesExhausted(
             name = self.name, 
             func_name = self.name,
@@ -949,6 +953,7 @@ class FunctionManager(ABC):
         with_index: Optional[bool] = False,
         **function_kwargs
     ) -> Union[Optional['FunctionSchemaT'], Tuple[int, Optional['FunctionSchemaT']]]:
+        # sourcery skip: low-code-quality
         """
         Runs the function
         """
@@ -983,7 +988,7 @@ class FunctionManager(ABC):
             if self.cache_enabled and function.is_valid_response(result):
                 self.cache.set(key, result)
         
-        self.autologger.info(f"Function: {function.name} in {t.total_s} (Cache Hit: {cache_hit})", prefix = key, colored = True)
+        self.autologger.info(f"Function: {function.name} in {t.total_s} (Cache Hit: {cache_hit}, Client: {result.function_client_name})", prefix = key, colored = True)
         if is_iterator and with_index:
             return idx, result if function.is_valid_response(result) else (idx, None)
         return result if function.is_valid_response(result) else None
@@ -1034,7 +1039,7 @@ class FunctionManager(ABC):
             if self.cache_enabled and function.is_valid_response(result):
                 await self.cache.aset(key, result)
         
-        self.autologger.info(f"Function: {function.name} in {t.total_s} (Cache Hit: {cache_hit})", prefix = key, colored = True)
+        self.autologger.info(f"Function: {function.name} in {t.total_s} (Cache Hit: {cache_hit}, Client: {result.function_client_name})", prefix = key, colored = True)
         if is_iterator and with_index:
             return idx, result if function.is_valid_response(result) else (idx, None)
         return result if function.is_valid_response(result) else None

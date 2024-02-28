@@ -15,6 +15,7 @@ gpt-4-1106-preview:
 gpt-4-0125-preview:
   aliases:
   - gpt-4-turbo-preview
+  - gpt-4-turbo-v
   context_length: 128000
   costs:
     unit: 1000
@@ -161,19 +162,25 @@ text-embedding-ada-002:
   endpoints:
   - embeddings
 
-text-embedding-3-large:
-  context_length: 8191
-  costs:
-    unit: 1000
-    input: 0.00013
-  endpoints:
-  - embeddings
-
 text-embedding-3-small:
+  aliases:
+  - t3small
+  - t3-small
   context_length: 8191
   costs:
     unit: 1000
     input: 0.00002
+  endpoints:
+  - embeddings
+
+text-embedding-3-large:
+  aliases:
+  - t3large
+  - t3-large
+  context_length: 8191
+  costs:
+    unit: 1000
+    input: 0.00013
   endpoints:
   - embeddings
 
