@@ -7,6 +7,7 @@ OpenAI Functions Base Class
 import jinja2
 import functools
 import inspect
+import random
 from abc import ABC
 from pydantic import Field, BaseModel
 # from lazyops.types import BaseModel
@@ -151,7 +152,7 @@ class BaseFunction(ABC):
     prompt_template: Optional[str] = None
     system_template: Optional[str] = None
 
-    default_model: Optional[str] = 'gpt-35-turbo'
+    default_model: Optional[Union[str, List[str]]] = 'gpt-35-turbo'
     default_larger_model: Optional[bool] = None
     cachable: Optional[bool] = True
     result_buffer: Optional[int] = 1000
@@ -208,11 +209,12 @@ class BaseFunction(ABC):
         """
         Returns the default model
         """
+        default_model = self.default_model if isinstance(self.default_model, str) else random.choice(self.default_model)
         if self.settings.is_local_env:
-            return self.default_model_local or self.default_model
+            return self.default_model_local or default_model
         if self.settings.is_development_env:
-            return self.default_model_develop or self.default_model
-        return self.default_model_production or self.default_model
+            return self.default_model_develop or default_model
+        return self.default_model_production or default_model
 
     @property
     def autologger(self) -> 'Logger':
@@ -228,6 +230,8 @@ class BaseFunction(ABC):
         """
         Returns True if the default model is different than the default model
         """
+        if isinstance(self.default_model, list):
+            return self.default_model_func not in self.default_model
         return self.default_model_func != self.default_model
 
 
