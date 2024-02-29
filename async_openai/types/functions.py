@@ -15,6 +15,7 @@ from lazyops.utils.times import Timer
 from lazyops.libs.proxyobj import ProxyObject
 from lazyops.types.models import schema_extra, PYD_VERSION
 from async_openai.utils.fixjson import resolve_json
+from async_openai.utils.helpers import weighted_choice
 from . import errors
 
 from typing import Optional, Any, Set, Dict, List, Union, Type, Tuple, Awaitable, Generator, AsyncGenerator, TypeVar, TYPE_CHECKING
@@ -157,6 +158,7 @@ class BaseFunction(ABC):
 
     default_model: Optional[Union[str, List[str]]] = 'gpt-35-turbo'
     default_larger_model: Optional[bool] = None
+    default_model_weights: Optional[Dict[str, float]] = None
     cachable: Optional[bool] = True
     result_buffer: Optional[int] = 1000
     retry_limit: Optional[int] = 5
@@ -203,6 +205,8 @@ class BaseFunction(ABC):
             self.debug_enabled = debug_enabled
         else:
             self.debug_enabled = self.settings.debug_enabled
+        if self.default_model_weights and not isinstance(self.default_model, list):
+            self.default_model = list(self.default_model_weights.keys())
         self.build_funcs(**kwargs)
         self.build_templates(**kwargs)
         self.post_init(**kwargs)
@@ -212,7 +216,10 @@ class BaseFunction(ABC):
         """
         Returns the default model
         """
-        default_model = self.default_model if isinstance(self.default_model, str) else random.choice(self.default_model)
+        if self.default_model_weights:
+            default_model = weighted_choice(self.default_model_weights)
+        else:
+            default_model = self.default_model if isinstance(self.default_model, str) else random.choice(self.default_model)
         if self.settings.is_local_env:
             return self.default_model_local or default_model
         if self.settings.is_development_env:
