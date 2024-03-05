@@ -323,7 +323,7 @@ class OpenAIManager(abc.ABC):
         """
         if self.auto_loadbalance_clients:
             if not client_names: return self.apis.get_api_client(**kwargs)
-            return await self.apis.aget_api_client_from_list(client_name = client_name, **kwargs)
+            return await self.apis.aget_api_client_from_list(client_names = client_names, **kwargs)
         if not client_names: return self.get_api_client(**kwargs)
         if not self.auto_healthcheck:
             name = self.select_client_name_from_weights(client_names) if self.has_client_weights else random.choice(client_names)
