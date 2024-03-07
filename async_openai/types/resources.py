@@ -55,7 +55,8 @@ class Usage(BaseModel):
     completion_tokens: Optional[int] = 0
     total_tokens: Optional[int] = 0
 
-    @lazyproperty
+    # @lazyproperty
+    @property
     def consumption(self) -> int:
         """
         Gets the consumption
@@ -66,17 +67,22 @@ class Usage(BaseModel):
         """
         Updates the consumption
         """
-        for key in {
-            'prompt_tokens',
-            'completion_tokens',
-            'total_tokens',
-        }:
-            if not hasattr(self, key):
-                setattr(self, key, 0)
-            val = usage.get(key, 0) if isinstance(usage, dict) else getattr(usage, key, 0)
-            setattr(self, key, getattr(self, key) + val)
+        if isinstance(usage, Usage):
+            if usage.prompt_tokens: self.prompt_tokens += usage.prompt_tokens
+            if usage.completion_tokens: self.completion_tokens += usage.completion_tokens
+            if usage.total_tokens: self.total_tokens += usage.total_tokens
+            return
+        
+        if usage.get('prompt_tokens'): self.prompt_tokens += usage['prompt_tokens']
+        if usage.get('completion_tokens'): self.completion_tokens += usage['completion_tokens']
+        if usage.get('total_tokens'): self.total_tokens += usage['total_tokens']
 
-
+    def __iadd__(self, other: Union['Usage', Dict[str, int]]):
+        """
+        Adds the usage
+        """
+        self.update(other)
+        return self.consumption
 
 
 class BaseResource(BaseModel):

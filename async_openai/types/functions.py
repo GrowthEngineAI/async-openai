@@ -107,7 +107,12 @@ class BaseFunctionModel(BaseModel):
         Sets the values from the response
         """
         if name: self.function_name = name
-        self.function_usage = response.usage
+        usage = response.usage
+        if isinstance(usage, dict): 
+            from async_openai.types.resources import Usage
+            usage = Usage(**usage)
+            
+        self.function_usage = usage
         if response.response_ms: self.function_duration = response.response_ms / 1000
         self.function_model = response.model
         if client_name: self.function_client_name = client_name
