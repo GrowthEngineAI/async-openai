@@ -26,3 +26,4 @@ tests/private_*
 tests/v2/private_*
 tests/v2/fireworks*
 tests/v2/together*
+async_openai/schemas/external/huggingface

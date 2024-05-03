@@ -33,6 +33,9 @@ class ExternalProviderConfig(BaseModel):
     api_key: Optional[str] = Field(None, description="The API Key")
     api_keys: Optional[List[str]] = Field(None, description="The API Keys")
 
+    max_retries: Optional[int] = Field(None, description="The maximum number of retries for the API")
+    weight: Optional[float] = Field(None, description="The weight of the provider")
+
     custom_headers: Optional[Dict[str, str]] = Field(None, description="Custom Headers")
     proxy_url: Optional[str] = Field(None, description="The Proxy URL")
     proxy_headers: Optional[Dict[str, str]] = Field(None, description="Proxy Headers")
@@ -45,6 +48,27 @@ class ExternalProviderConfig(BaseModel):
         """
         if value is None: return {}
         return {str(k).strip(): str(v).strip() for k,v in value.items()}
+    
+    @validator("max_retries", pre=True)
+    def validate_max_retries(cls, value: Optional[Union[str, int]]) -> Optional[int]:
+        """
+        Validates the Max Retries
+        """
+        if value is None: return None
+        try:
+            return int(value)
+        except ValueError:
+            return None
+        
+    @validator("weight", pre=True)
+    def validate_weight(cls, value: Optional[Union[str, float]]) -> Optional[float]:
+        """
+        Validates the Weight
+        """
+        if value is None: return None
+        try: return float(value)
+        except ValueError:
+            return None
 
     @property
     def has_api_key(self) -> bool:
@@ -279,6 +303,16 @@ class ExternalProviderRoutes(BaseModel):
             "completions": self.completions.route_class,
             "embeddings": self.embeddings.route_class,
         }
+    
+    # def configure_retry(self, max_retries: Optional[int] = None):
+    #     """
+    #     Configures the retry logic
+    #     """
+    #     if max_retries is None: return
+    #     if hasattr(self.chat.route_class, 'max_retries'): self.chat.route_class.max_retries = max_retries
+    #     if hasattr(self.completions.route_class, 'max_retries'): self.completions.route_class.max_retries = max_retries
+    #     if hasattr(self.embeddings.route_class, 'max_retries'): self.embeddings.route_class.max_retries = max_retries
+
             
 
 class ExternalProviderSettings(BaseModel):
@@ -341,6 +375,20 @@ class ExternalProviderSettings(BaseModel):
             if m.aliases:
                 names.extend(m.aliases)
         return names
+    
+
+    # if PYD_VERSION == 2:
+    #     @model_validator(mode = 'after')
+    #     def validate_provider_settings(self):
+    #         """
+    #         Validate the provider settings
+    #         """
+    #         if self.config.max_retries is not None:
+    #             # from lazyops.utils.logs import logger
+    #             # logger.info(f'Configuring max retries: {self.config.max_retries}')
+    #             self.routes.configure_retry(max_retries = self.config.max_retries)
+    #         return self
+
 
 
 class ExternalProviderAuth(aiohttpx.Auth):

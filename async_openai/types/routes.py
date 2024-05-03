@@ -6,6 +6,7 @@ import backoff
 import functools
 from lazyops.types import BaseModel, Field, lazyproperty
 from lazyops.utils import ObjectEncoder
+from lazyops.utils.helpers import timed_cache
 from typing import Dict, Optional, Any, List, Type, Callable, Union
 
 from async_openai.utils.logs import logger
@@ -76,6 +77,9 @@ class BaseRoute(BaseModel):
 
     api_resource: Optional[str] = Field(default = '', exclude = True)
     root_name: Optional[str] = Field(default = '', exclude = True)
+
+
+    is_rate_limited_value: Optional[bool] = Field(default = False, exclude = True, description = 'A flag to indicate if the API is rate limited')
 
     # @lazyproperty
     # def api_resource(self):
@@ -224,6 +228,15 @@ class BaseRoute(BaseModel):
         data = self.handle_response(api_response)
         return self.prepare_response(data, input_object = input_object, parse_stream = parse_stream)
     
+    @timed_cache(secs = 120, cache_if_result = True)
+    def check_if_rate_limited(self):
+        """
+        Checks if the API is rate limited
+        """
+        if not self.is_rate_limited_value: return False
+        self.is_rate_limited_value = False
+        return True
+
     def create(
         self,
         input_object: Optional[BaseResource] = None,
@@ -246,12 +259,14 @@ class BaseRoute(BaseModel):
         
         # Handle Auto Retry Logic
         current_model = kwargs.get('model', input_object.model if input_object else None)
-        if not auto_retry_limit: auto_retry_limit = self.settings.max_retries
+        # if not auto_retry_limit: auto_retry_limit = self.settings.max_retries
+        if auto_retry_limit is None: auto_retry_limit = self.max_retries if self.max_retries is not None else self.settings.max_retries
         try:
             return self._create(input_object = input_object, timeout = timeout, headers = headers, **kwargs)
         except RateLimitError as e:
             if current_attempt >= auto_retry_limit:
                 raise MaxRetriesExceeded(name = self.name, attempts = current_attempt, base_exception = e) from e
+            self.is_rate_limited_value = True
             sleep_interval = e.retry_after_seconds * 1.5 if e.retry_after_seconds else 15.0
             logger.warning(f'[{self.name} - {current_model}: {current_attempt}/{auto_retry_limit}] Rate Limit Error. Sleeping for {sleep_interval} seconds')
             time.sleep(sleep_interval)
@@ -375,13 +390,14 @@ class BaseRoute(BaseModel):
         
         # Handle Auto Retry Logic
         current_model = kwargs.get('model', input_object.model if input_object else None)
-        if not auto_retry_limit: auto_retry_limit = self.settings.max_retries
+        if auto_retry_limit is None: auto_retry_limit = self.max_retries if self.max_retries is not None else self.settings.max_retries
         try:
             return await self._async_create(input_object = input_object, timeout = timeout, headers = headers, **kwargs)
         except RateLimitError as e:
             if current_attempt >= auto_retry_limit:
                 raise MaxRetriesExceeded(name = self.name, attempts = current_attempt, base_exception = e) from e
-            sleep_interval = e.retry_after_seconds * 1.5 if e.retry_after_seconds else 15.0
+            self.is_rate_limited_value = True
+            sleep_interval = e.retry_after_seconds * 1.5 if e.retry_after_seconds else (7.5 * max(2, current_attempt))
             logger.warning(f'[{self.name} - {current_model}: {current_attempt}/{auto_retry_limit}] Rate Limit Error. Sleeping for {sleep_interval} seconds')
             await asyncio.sleep(sleep_interval)
             current_attempt += 1
@@ -399,7 +415,7 @@ class BaseRoute(BaseModel):
             if current_attempt >= auto_retry_limit:
                 raise MaxRetriesExceeded(name = self.name, attempts=current_attempt, base_exception = e) from e
             logger.warning(f'[{self.name} - {current_model}: {current_attempt}/{auto_retry_limit}] API Error: {e}. Sleeping for 10 seconds')
-            await asyncio.sleep(10.0)
+            await asyncio.sleep(5.0 * max(2, current_attempt))
             current_attempt += 1
             if header_cache_keys and headers:
                 # headers = kwargs.pop('headers')
@@ -429,7 +445,7 @@ class BaseRoute(BaseModel):
                 error_kind = 'HTML Error'
                 error_value = error_value[:500]
             logger.warning(f'[{self.name} - {current_model}: {current_attempt}/{auto_retry_limit}] {error_kind}: ({type(e)}) {error_value}. Sleeping for 10 seconds')
-            await asyncio.sleep(10.0)
+            await asyncio.sleep(5.0 * max(2, current_attempt))
             current_attempt += 1
             if header_cache_keys and headers:
                 # headers = kwargs.pop('headers')

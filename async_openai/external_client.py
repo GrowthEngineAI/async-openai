@@ -113,7 +113,10 @@ class ExternalOpenAIClient(abc.ABC):
         if max_retries is not None:
             self.max_retries = max_retries
         elif self.max_retries is None:
-            self.max_retries = self.settings.max_retries
+            if self.provider.config.max_retries is not None:
+                self.max_retries = self.provider.config.max_retries
+            else:
+                self.max_retries = self.settings.max_retries
         if disable_retries is not None:
             self.disable_retries = disable_retries
         elif self.disable_retries is None:

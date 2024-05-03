@@ -85,6 +85,7 @@ class OpenAIManager(abc.ABC):
         if self.auto_healthcheck is None: self.auto_healthcheck = self.settings.auto_healthcheck
 
         self.external_clients: Dict[str, 'ExternalOpenAIClient'] = {}
+        self.external_client_weights: Optional[Dict[str, float]] = {}
         self.external_model_to_client: Dict[str, str] = {}
         self.external_client_default: Optional[str] = None
         # self._external_clients: 
@@ -95,6 +96,13 @@ class OpenAIManager(abc.ABC):
         Returns if the client has weights
         """
         return bool(self.client_weights)
+    
+    @property
+    def has_external_client_weights(self) -> bool:
+        """
+        Returns if the client has weights
+        """
+        return bool(self.external_client_weights)
 
     def add_callback(self, callback: Callable):
         """
@@ -394,6 +402,8 @@ class OpenAIManager(abc.ABC):
         self.external_clients[client.name] = client
         if set_as_default or not self.external_client_default:
             self.external_client_default = client.name
+        if client.provider.config.weight is not None:
+            self.external_client_weights[client.name] = client.provider.config.weight
         for model_name in client.provider.model_list:
             provider_model_name = f'{client.name}/{model_name}'
             self.external_model_to_client[provider_model_name] = client.name
@@ -577,6 +587,12 @@ class OpenAIManager(abc.ABC):
         Returns the client weights
         """
         return weighted_choice([(name, self.client_weights.get(name, 1.0)) for name in names])
+
+    def select_external_client_name_from_weights(self, names: List[str]) -> str:
+        """
+        Returns the client weights
+        """
+        return weighted_choice([(name, self.external_client_weights.get(name, 1.0)) for name in names])
 
     # def get_client_ping_timeout(self, name: str) -> Optional[float]:
     #     """
@@ -899,7 +915,7 @@ class OpenAIManager(abc.ABC):
             noproxy_required = noproxy_required, 
             excluded_clients = excluded_clients
         )
-        client_name = random.choice(client_names)
+        client_name = self.select_external_client_name_from_weights(client_names) if self.has_external_client_weights else random.choice(client_names)
         client = self.external_clients[client_name]
         if self.debug_enabled:
             logger.info(f'Available Clients: {client_names} - Selected: {client.name}')

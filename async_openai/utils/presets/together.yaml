@@ -7,6 +7,7 @@ config:
   api_key_scheme: Bearer 
   api_keys: env/TOGETHER_API_KEYS
   api_key: env/TOGETHER_API_KEY
+  max_retries: env/TOGETHER_MAX_RETRIES
   hf_compatible: true
 routes:
   chat:
