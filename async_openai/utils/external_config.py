@@ -47,7 +47,10 @@ class ExternalProviderConfig(BaseModel):
         Validates the Headers
         """
         if value is None: return {}
-        return {str(k).strip(): str(v).strip() for k,v in value.items()}
+        value = {k: v for k,v in value.items() if v is not None}
+        for k,v in value.items():
+            value[k.strip()] = json.dumps(v) if isinstance(v, (list, dict)) else str(v).strip()
+        return value
     
     @validator("max_retries", pre=True)
     def validate_max_retries(cls, value: Optional[Union[str, int]]) -> Optional[int]:
@@ -360,6 +363,8 @@ class ExternalProviderSettings(BaseModel):
         if overrides: 
             from lazyops.libs.abcs.utils.helpers import update_dict
             data = update_dict(data, overrides)
+        # from lazyops.utils import logger
+        # logger.info(data)
         provider_settings = cls.parse_obj(data)
         ModelContextHandler.add_provider(provider_settings)
         return provider_settings
