@@ -464,7 +464,8 @@ class OpenAIManager(abc.ABC):
         if client.provider.config.has_api_keys:
             extra += f' Multiple API Keys: {len(client.provider.config.api_keys)},'
         extra = extra.strip().rstrip(',')
-        logger.info(f'Registered `|g|{client.name}|e|` @ `{client.provider.config.api_url}` (External: |g|{client.provider.name}|e|, {extra})', colored = True)
+        if extra: extra = f', {extra}'
+        logger.info(f'Registered `|g|{client.name}|e|` @ `{client.provider.config.api_url}` (External: |g|{client.provider.name}|e|{extra})', colored = True)
         return client
 
 
@@ -746,7 +747,7 @@ class OpenAIManager(abc.ABC):
             
             if client_weight: self.client_weights[name] = client_weight
             if client_ping_timeout is not None: self.client_ping_timeouts[name] = client_ping_timeout
-            
+            _has_proxy = False
             if (self.settings.proxy.enabled and not proxy_disabled) and config.get('api_base'):
                 # Initialize a non-proxy version of the client
                 config['api_base'] = source_endpoint
@@ -762,8 +763,9 @@ class OpenAIManager(abc.ABC):
                     config = config,
                 )
                 config['api_base'] = self.settings.proxy.endpoint
+                _has_proxy = True
             c = self.init_api_client(name, is_azure = is_azure, set_as_default = is_default, **config)
-            msg = f'Registered: `|g|{c.name}|e|` @ `{source_endpoint or c.base_url}` (Azure: {c.is_azure}'
+            msg = f'Registered: `|g|{c.name}|e|` @ `{source_endpoint or c.base_url}` (Azure: {c.is_azure}, Px: {_has_proxy}'
             if has_weights: msg += f', Weight: {client_weight}'
             msg += ')'
             logger.info(msg, colored = True)
