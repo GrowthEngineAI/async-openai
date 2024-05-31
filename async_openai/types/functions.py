@@ -524,7 +524,7 @@ class BaseFunction(ABC):
         """
         schema = schema or self.schema
         try:
-            result = schema.model_validate(response.function_results[0].arguments, from_attributes = True)
+            result = schema.model_validate(response.function_results[0].arguments, from_attributes = True, context = {'source': 'function'})
             result._set_values_from_response(response, name = self.name if include_name else None, client_name = client_name)
             return result
         except IndexError as e:
@@ -533,7 +533,7 @@ class BaseFunction(ABC):
         except Exception as e:
             self.autologger.error(f"[{self.name} - {response.model} - {response.usage}] Failed to parse object: {e}\n{response.text}\n{response.function_results[0].arguments}")
             try:
-                result = schema.model_validate(resolve_json(response.function_results[0].arguments), from_attributes = True)
+                result = schema.model_validate(resolve_json(response.function_results[0].arguments), from_attributes = True, context = {'source': 'function'})
                 result._set_values_from_response(response, name = self.name if include_name else None)
                 return result
             except Exception as e:

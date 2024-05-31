@@ -765,9 +765,21 @@ class OpenAIManager(abc.ABC):
                 config['api_base'] = self.settings.proxy.endpoint
                 _has_proxy = True
             c = self.init_api_client(name, is_azure = is_azure, set_as_default = is_default, **config)
-            msg = f'Registered: `|g|{c.name}|e|` @ `{source_endpoint or c.base_url}` (Azure: {c.is_azure}, Px: {_has_proxy}'
-            if has_weights: msg += f', Weight: {client_weight}'
-            msg += ')'
+            msg = f'Registered: `|g|{c.name}|e|` @ `{source_endpoint or c.base_url}`'
+            extra_msgs = []
+            if has_weights: 
+                if isinstance(client_weight, float):
+                    _wp, _wsfx = '|g|', '|e|'
+                    if client_weight <= 0.0: 
+                        _wp, _wsfx = '', ''
+                    elif client_weight <= 0.25: _wp = '|r|'
+                    elif client_weight <= 0.45: _wp = '|y|'
+                    extra_msgs.append(f'Weight: {_wp}{client_weight}{_wsfx}')
+                else:
+                    extra_msgs.append(f'Weight: {client_weight}')
+            if c.is_azure: extra_msgs.append('Azure')
+            if _has_proxy: extra_msgs.append('Proxied')
+            if extra_msgs: msg += f' ({", ".join(extra_msgs)})'
             logger.info(msg, colored = True)
         
         # Set the models for inclusion

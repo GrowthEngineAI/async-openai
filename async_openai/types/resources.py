@@ -2,11 +2,13 @@ import os
 import json
 import aiohttpx
 import datetime
+import tempfile
+import pathlib
 from pydantic import ConfigDict
 from pydantic.types import ByteSize
 from lazyops.types import BaseModel, validator, lazyproperty
 from lazyops.types.models import get_pyd_field_names, pyd_parse_obj, get_pyd_dict, _BaseModel
-from lazyops.utils import ObjectDecoder
+from lazyops.utils import ObjectDecoder, ObjectEncoder
 from async_openai.utils.logs import logger
 from async_openai.utils.helpers import aparse_stream, parse_stream
 
@@ -156,6 +158,29 @@ class BaseResource(BaseModel):
         resource_obj = resource.parse_obj(resource_kwargs)
         return resource_obj, return_kwargs
     
+
+    @staticmethod
+    def create_batch_resource(
+        resource: Type['BaseResource'],
+        batch: List[Union[Dict[str, Any], Any]],
+        **kwargs
+    ) -> Tuple[List['BaseResource'], Dict]:
+        """
+        Extracts the resource from the kwargs and returns the resource 
+        and the remaining kwargs
+        """
+        resource_fields = get_pyd_field_names(resource)
+        resource_kwargs = {k: v for k, v in kwargs.items() if k in resource_fields}
+        return_kwargs = {k: v for k, v in kwargs.items() if k not in resource_fields}
+        resource_objs = []
+        for item in batch:
+            if isinstance(item, dict):
+                item.update(resource_kwargs)
+                resource_objs.append(resource.parse_obj(item))
+            else:
+                resource_objs.append(item)
+        return resource_objs, return_kwargs
+
     @classmethod
     def create_many(cls, data: List[Dict]) -> List['BaseResource']:
         """
@@ -267,7 +292,7 @@ class FileResource(BaseResource):
     file_id: Optional[str]
     filename: Optional[str] = None
     purpose: FilePurpose = FilePurpose.fine_tune
-    model: Optional[str]
+    model: Optional[str] = None
 
     @validator("purpose")
     def validate_purpose(cls, value):
@@ -300,3 +325,43 @@ class FileResource(BaseResource):
                 ("file", (self.filename or file.name, (await file.async_read_bytes() if _has_fileio else file.read_bytes()), "application/octet-stream"))
             )
         return files
+
+    @classmethod
+    def create_from_batch(
+        cls,
+        batch: List[Union[Dict[str, Any], str]],
+        output_path: Optional[str] = None,
+        file_id: Optional[str] = None,
+        filename: Optional[str] = None,
+        purpose: Optional[FilePurpose] = None,
+        **kwargs,
+    ) -> Tuple['FileObject', Dict[str, Any]]:
+        """
+        Creates a file object from a batch in jsonl format
+        """
+        for n, b in enumerate(batch):
+            if isinstance(b, dict):
+                batch[n] = json.dumps(b, cls = ObjectEncoder)
+        if output_path:
+            output = pathlib.Path(output_path)
+        else:
+            tmp = tempfile.NamedTemporaryFile(delete = False)
+            tmp.close()
+            output = pathlib.Path(tmp.name)
+
+        with output.open('w') as f:
+            for b in batch:
+                f.write(f'{b}\n')
+        resource_fields = get_pyd_field_names(cls)
+        resource_kwargs = {k: v for k, v in kwargs.items() if k in resource_fields}
+        return_kwargs = {k: v for k, v in kwargs.items() if k not in resource_fields}
+        return cls(
+            file = output,
+            purpose = purpose,
+            filename = filename,
+            file_id = file_id,
+            **resource_kwargs
+        ), return_kwargs
+        
+
+    

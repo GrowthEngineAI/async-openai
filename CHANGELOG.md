@@ -1,5 +1,13 @@
 # Changelogs
 
+#### v0.0.53 (2024-05-31)
+
+- Added support for new `gpt-4-o` model
+- Added support for external providers
+- Update certain validation behavior of Functions
+
+- TODO: Add batch create support
+
 #### v0.0.52 (2024-02-28)
 
 - Added support for the following parameters in `model_configurations` in `OpenAIManager`:

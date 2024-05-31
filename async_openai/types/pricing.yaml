@@ -24,6 +24,32 @@ gpt-4-0125-preview:
   endpoints:
   - chat
 
+gpt-4-turbo-2024-04-09:
+  aliases:
+  - gpt-4-turbo-2024
+  - gpt-4-turbo-2024-04-09
+  - gpt-4-2024-preview
+  context_length: 128000
+  costs:
+    unit: 1_000_000
+    input: 10.00
+    output: 30.00
+  endpoints:
+  - chat
+
+gpt-4o:
+  aliases:
+  - gpt-4-o
+  - gpt4o
+  - gpt-4o-2024-05-13
+  context_length: 128000
+  costs:
+    unit: 1_000_000
+    input: 5.00
+    output: 15.00
+  endpoints:
+  - chat
+
 gpt-4:
   aliases:
   - gpt-4-0613

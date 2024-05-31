@@ -194,6 +194,7 @@ class FilePurpose(str, Enum):
     fine_tune = "fine-tune"
     train = "fine-tune-train"
     search = "search"
+    batch = "batch"
 
     @classmethod
     def parse_str(cls, value: Union[str, 'FilePurpose'], raise_error: bool = True):
@@ -206,6 +207,8 @@ class FilePurpose(str, Enum):
             return cls.fine_tune
         elif "search" in value:
             return cls.search
+        elif "batch" in value:
+            return cls.batch
         if not raise_error: return None
         raise ValueError(f"Cannot convert {value} to FilePurpose")
 

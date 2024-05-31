@@ -6,14 +6,14 @@ import backoff
 import functools
 from lazyops.types import BaseModel, Field, lazyproperty
 from lazyops.utils import ObjectEncoder
-from lazyops.utils.helpers import timed_cache
+from lazyops.utils.helpers import timed_cache, create_unique_id
 from typing import Dict, Optional, Any, List, Type, Callable, Union
 
 from async_openai.utils.logs import logger
 from async_openai.utils.config import get_settings, get_default_headers, get_max_retries, OpenAISettings, AzureOpenAISettings
 from async_openai.types.errors import fatal_exception, error_handler, RateLimitError, APIError, InvalidMaxTokens, InvalidRequestError, MaxRetriesExceeded
-from async_openai.types.resources import BaseResource, FileResource
-from async_openai.types.responses import BaseResponse
+from async_openai.types.resources import BaseResource, FileResource, FileObject
+from async_openai.types.responses import BaseResponse, BaseBatchResponseItem, BatchBaseResponse, BatchStatusResponse
 
 __all__ = [
     'BaseRoute',
@@ -464,6 +464,67 @@ class BaseRoute(BaseModel):
             
 
     acreate = async_create
+
+
+    def batch_create_v2(
+        self, 
+        batch: List[Union[BaseResource, Dict[str, Any]]],
+        headers: Optional[Dict[str, str]] = None,
+        timeout: Optional[int] = None,
+        header_cache_keys: Optional[List[str]] = None,
+        until_complete: Optional[bool] = True,
+        poll_interval: Optional[float] = 10.0,
+        **kwargs
+    ) -> Union[BatchBaseResponse, BatchStatusResponse]:
+        """
+        Batch Create Resources
+
+        :param batch: List of Resources to Create
+        :param headers: Optional Headers
+        :param timeout: Optional Timeout
+        :param header_cache_keys: Optional Header Cache Keys
+        :param until_complete: Optional Wait until the batch is complete
+        """
+        raise NotImplementedError('Batch Create v2 is not supported for this route')
+        if not self.create_batch_enabled:
+            raise NotImplementedError(f'Batch Create is not enabled for {self.api_resource}')
+        input_batch, kwargs = self.input_model.create_batch_resource(resource = self.input_model, batch = batch, **kwargs)
+        input_object_idx = [
+            {create_unique_id(): n} for n in range(len(input_batch))
+        ]
+        input_data_items = [
+            {
+                "custom_id": x,
+                "method": "POST",
+                "url": self.api_resource, 
+                "body": i.dict(exclude_none = self.exclude_null)
+            } for x, i in zip(input_object_idx, input_batch)
+        ]
+        
+        # WIP - Batch Create
+        if input_object is None:
+            input_object, kwargs = self.input_model.create_resource(
+                resource = self.input_model,
+                **kwargs
+            )
+
+        api_resource = f'{self.api_resource}/batch'
+        data = json.dumps(
+            # get_pyd_dict(input_object, exclude_none = self.exclude_null),
+            input_object.dict(exclude_none = self.exclude_null), 
+            cls = ObjectEncoder
+        )
+        api_response = self._send(
+            method = 'POST',
+            url = self.get_resource_url(data = data),
+            data = data,
+            headers = headers,
+            timeout = self.timeout,
+            **kwargs
+        )
+        resp = self.handle_response(api_response)
+        return self.prepare_response(resp, input_object = input_object)
+
     
     def batch_create(
         self, 
@@ -957,6 +1018,50 @@ class BaseRoute(BaseModel):
 
     aupsert = async_upsert
 
+
+    def upload_v2(
+        self, 
+        input_object: Optional[FileResource] = None,
+        batch: Optional[List[Union[Dict[str, Any], str]]] = None,
+        headers: Optional[Dict[str, str]] = None,
+        endpoint: Optional[str] = None,
+        **kwargs,
+    ) -> FileObject:
+        """
+        Upload a Resource
+
+        :param input_object: Input Object to Create
+        """
+        bypass_allowed = kwargs.pop('bypass_allowed', False)
+        if not bypass_allowed and not self.upload_enabled:
+            raise NotImplementedError(f'Upload is not enabled for {self.api_resource}')
+        
+        if input_object is None: 
+            if batch:
+                input_object, kwargs = FileResource.create_from_batch(
+                    batch = batch, 
+                    **kwargs
+                )
+            else:
+                input_object, kwargs = self.input_model.create_resource(
+                    resource = FileResource,
+                    **kwargs
+                )
+        
+        headers = headers or {}
+        headers['Content-Type'] = 'multipart/form-data'
+        endpoint = endpoint or 'files'
+        api_response = self._send(
+            method = 'POST',
+            url = endpoint,
+            files = input_object.get_params(**kwargs),
+            headers = headers,
+            timeout = self.timeout,
+            **kwargs
+        )
+        data = self.handle_response(api_response)
+        return self.prepare_response(data, input_object = input_object, response_object = FileObject)
+            
     def upload(
         self, 
         input_object: Optional[Type[FileResource]] = None,
@@ -992,6 +1097,51 @@ class BaseRoute(BaseModel):
         )
         data = self.handle_response(api_response)
         return self.prepare_response(data, input_object = input_object)
+    
+
+    async def async_upload_v2(
+        self, 
+        input_object: Optional[FileResource] = None,
+        batch: Optional[List[Union[Dict[str, Any], str]]] = None,
+        headers: Optional[Dict[str, str]] = None,
+        endpoint: Optional[str] = None,
+        **kwargs,
+    ) -> FileObject:
+        """
+        Upload a Resource
+
+        :param input_object: Input Object to Create
+        """
+        bypass_allowed = kwargs.pop('bypass_allowed', False)
+        if not bypass_allowed and not self.upload_enabled:
+            raise NotImplementedError(f'Upload is not enabled for {self.api_resource}')
+        
+        if input_object is None: 
+            if batch:
+                input_object, kwargs = FileResource.create_from_batch(
+                    batch = batch, 
+                    **kwargs
+                )
+            else:
+                input_object, kwargs = self.input_model.create_resource(
+                    resource = FileResource,
+                    **kwargs
+                )
+        
+        headers = headers or {}
+        headers['Content-Type'] = 'multipart/form-data'
+        endpoint = endpoint or 'files'
+        api_response = await self._async_send(
+            method = 'POST',
+            url = endpoint,
+            files = input_object.get_params(**kwargs),
+            headers = headers,
+            timeout = self.timeout,
+            **kwargs
+        )
+        data = self.handle_response(api_response)
+        return self.prepare_response(data, input_object = input_object, response_object = FileObject)
+
         
     async def async_upload(
         self, 
