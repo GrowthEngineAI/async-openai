@@ -175,10 +175,18 @@ class BaseFunction(ABC):
 
     auto_register_function: Optional[bool] = True
 
+    @classmethod
+    def configure_subclass(cls, **kwargs):
+        """
+        Configures the subclass
+        """
+        pass
+
     def __init_subclass__(cls, **kwargs):
         """
         Subclass Hook
         """
+        cls.configure_subclass(**kwargs)
         if cls.auto_register_function:
             OpenAIFunctions.register_function(cls, initialize = False)
 
