@@ -993,7 +993,7 @@ class FunctionManager(ABC):
         if function.has_diff_model_than_default:
             key += f'.{function.default_model_func}'
 
-        t = Timer()
+        t = Timer(format_short = 1)
         result = None
         cache_hit = False
         if self.cache_enabled and not overwrite:
@@ -1008,7 +1008,7 @@ class FunctionManager(ABC):
             if self.cache_enabled and function.is_valid_response(result):
                 self.cache.set(key, result)
         
-        self.autologger.info(f"Function: {function.name} in {t.total_s} (Cache Hit: {cache_hit}, Client: {result.function_client_name})", prefix = key, colored = True)
+        self.autologger.info(f"Function: {function.name} in {t.total_s} (Model: {result.function_model}, Client: {result.function_client_name}, Cache Hit: {cache_hit})", prefix = key, colored = True)
         if is_iterator and with_index:
             return idx, result if function.is_valid_response(result) else (idx, None)
         return result if function.is_valid_response(result) else None
@@ -1044,7 +1044,7 @@ class FunctionManager(ABC):
         if function.has_diff_model_than_default:
             key += f'.{function.default_model_func}'
 
-        t = Timer()
+        t = Timer(format_short = 1)
         result = None
         cache_hit = False
         if self.cache_enabled and not overwrite:
@@ -1059,7 +1059,7 @@ class FunctionManager(ABC):
             if self.cache_enabled and function.is_valid_response(result):
                 await self.cache.aset(key, result)
         
-        self.autologger.info(f"Function: {function.name} in {t.total_s} (Cache Hit: {cache_hit}, Client: {result.function_client_name})", prefix = key, colored = True)
+        self.autologger.info(f"Function: {function.name} in {t.total_s} (Model: {result.function_model}, Client: {result.function_client_name}, Cache Hit: {cache_hit})", prefix = key, colored = True)
         if is_iterator and with_index:
             return idx, result if function.is_valid_response(result) else (idx, None)
         return result if function.is_valid_response(result) else None
