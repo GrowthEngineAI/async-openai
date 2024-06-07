@@ -2,16 +2,19 @@
 import datetime
 import aiohttpx
 import contextlib
-
+import functools
 from lazyops.types import BaseModel, lazyproperty
 from lazyops.types.models import get_pyd_field_names, Field, PYD_VERSION
+from pydantic import RootModel
 from typing import Dict, Optional, Any, List, Type, Union, Generator, AsyncGenerator, cast
 from async_openai.types.errors import error_handler
 from async_openai.types.resources import BaseResource, FileObject, Usage
 from async_openai.utils import logger
 
 __all__ = [
-    'BaseResponse'
+    'BaseResponse',
+    'BaseBatchResponseItem',
+    'BatchBaseResponse',
 ]
 
 
@@ -20,8 +23,14 @@ Response Class
 """
 
 
+
 if PYD_VERSION == 2:
-    from pydantic import PrivateAttr
+    from pydantic import PrivateAttr, field_validator as _validator
+    prevalidator = functools.partial(_validator, mode = 'before')
+else:
+    from pydantic import validator as _validator
+    prevalidator = functools.partial(_validator, pre = True)
+
 
 class BaseResponse(BaseResource):
     
@@ -499,3 +508,302 @@ class BaseResponse(BaseResource):
         self._stream_consumed = True
         
 
+class BatchResponseData(BaseModel):
+    """
+    The response data for a batch request
+    """
+    status_code: Optional[int] = None
+    request_id: Optional[str] = None
+    body: Optional[Dict[str, Any]] = Field(default_factory = dict, description = "The body of the response")
+    usage: Optional[Usage] = Field(default_factory = Usage, description = "The usage of the response")
+    system_fingerprint: Optional[str] = None
+    
+
+class BaseBatchResponseItem(BaseResponse):
+    """
+    The response for a single item in a batch request
+    """
+    custom_id: Optional[str] = None
+    input_object: Optional[BaseResource] = Field(None, exclude = True)
+    response: Optional[BatchResponseData] = Field(default_factory = BatchResponseData, description = "The response for the item")
+    error: Optional[Any] = Field(default = None, description = "The error for the item")
+
+    if PYD_VERSION == 2:
+        _extra: Optional[Dict[str, Any]] = PrivateAttr(default_factory = dict)
+    else:
+        _extra: Optional[Dict[str, Any]] = Field(default_factory = dict, description = "Extra data for the item", exclude = True)
+
+
+    """
+    Modified Properties to support batch requests
+    """
+        
+    @property
+    def has_stream(self):
+        """
+        Returns whether the response is a stream
+        """
+        return False
+    
+    @property
+    def headers(self) -> Optional[Dict[str, str]]:
+        """
+        Returns the response headers
+        """
+        return self._extra.get('headers', {})
+
+    @headers.setter
+    def headers(self, value: Dict[str, str]):
+        """
+        Sets the response headers
+        """
+        self._extra['headers'] = value
+    
+    @property
+    def response_json(self) -> Dict:
+        """
+        Returns the response json
+        """
+        return self.response.body
+
+    @property
+    def request_id(self) -> Optional[str]:
+        """
+        Returns the request id
+        """
+        return self.response.request_id
+    
+    @property
+    def organization(self) -> str:
+        """
+        Returns the organization
+        """
+        return self.headers.get("openai-organization")
+    
+    @property
+    def is_azure(self) -> bool:
+        """
+        Returns whether the response is from azure
+        """
+        return bool(self.headers.get("azureml-model-session", self.headers.get("azureml-model-group")))
+
+    @property
+    def response_ms(self) -> Optional[int]:
+        """
+        Returns the response time in ms
+        """
+        h = self.headers.get("openai-processing-ms")
+        return None if h is None else round(float(h))
+    
+    @property
+    def response_timestamp(self) -> Optional[datetime.datetime]:
+        """
+        Returns the response timestamp
+        """
+        dt = self.headers.get("date")
+        return None if dt is None else datetime.datetime.strptime(dt, '%a, %d %b %Y %H:%M:%S GMT')
+
+    @property
+    def openai_version(self) -> Optional[str]:
+        """
+        Returns the openai version
+        """
+        return self.headers.get("openai-version")
+    
+    @property
+    def openai_model(self) -> Optional[str]:
+        """
+        Returns the openai model
+        """
+        return self.headers.get("openai-model", self.response.body.get('model', None))
+    
+    @property
+    def model_name(self) -> Optional[str]:
+        """
+        Returns the model name
+        """
+        return self.model.split('-')[1]
+
+
+    """
+    Object Data Properties
+    """
+
+    @property
+    def resource_data(self) -> List[Union[Type[BaseResource], Dict, Any]]:
+        """
+        Returns the appropriate data object
+        """
+        if self.has_data: return self.data
+        if self.has_choices: return self.choices
+        return self.events if self.has_events else []
+    
+    
+    def __getitem__(self, key: Union[str, int]) -> Union[Type[BaseModel], Dict, Any]:
+        """
+        Returns the appropriate data object from the response to support more
+        native access to the response data
+        """
+        if isinstance(key, str):
+            if not self.response_data:
+                self.response_data = self.response.body
+            return self.response_data.get(key)
+        return self.resource_data[key] if self.resource_data else None
+    
+    """
+    Response Handling Methods
+    """
+
+    def construct_resource(
+        self, 
+        parse_stream: Optional[bool] = False,
+        **kwargs
+    ):
+        """
+        Constructs the appropriate resource object
+        from the response
+        """
+        return self.handle_resource_item(item = self.response_json, **kwargs)
+
+
+    async def aconstruct_resource(
+        self, 
+        parse_stream: Optional[bool] = False,
+        **kwargs
+    ):
+        """
+        Constructs the appropriate resource object
+        from the response
+        """
+        return self.handle_resource_item(item = self.response_json, **kwargs)
+    
+        
+    @classmethod
+    def prepare_response(
+        cls, 
+        response_item: Dict[str, Any],
+        input_object: 'BaseResource',
+        parse_stream: Optional[bool] = False,
+        headers: Optional[Dict[str, str]] = None,
+        **kwargs
+    ) -> 'BaseBatchResponseItem':
+        """
+        Handles the response and returns the appropriate object
+        """
+        resource = cls.model_validate(response_item)
+        resource.input_object = input_object
+        if headers: resource.headers = headers
+        resource.construct_resource(parse_stream = parse_stream, **kwargs)
+        return resource
+    
+    @classmethod
+    async def aprepare_response(
+        cls, 
+        response_item: Dict[str, Any],
+        input_object: 'BaseResource',
+        parse_stream: Optional[bool] = False,
+        headers: Optional[Dict[str, str]] = None,
+        **kwargs
+    ) -> 'BaseBatchResponseItem':
+        """
+        Handles the response and returns the appropriate object
+        """
+        resource = cls.model_validate(response_item)
+        resource.input_object = input_object
+        if headers: resource.headers = headers
+        await resource.aconstruct_resource(parse_stream = parse_stream, **kwargs)
+        return resource
+
+
+
+class BatchBaseResponse(RootModel):
+    """
+    The base response for batch requests
+    """
+    root: List[BaseBatchResponseItem]
+
+    def __len__(self):
+        """
+        Returns the length of the root
+        """
+        return len(self.root)
+
+
+SUCCESSFUL_STATUSES = [
+    'completed',
+]
+UNSUCESSFUL_STATUSES = [
+    'failed',
+    'expired',
+    'cancelled',
+]
+IN_PROGRESS_STATUSES = [
+    'validating',
+    'in_progress',
+    'finalizing',
+    'cancelling',
+]
+
+TERMINAL_STATUSES = SUCCESSFUL_STATUSES + UNSUCESSFUL_STATUSES
+
+
+class BatchStatusResponse(BaseModel):
+    """
+    The response for a single item in a batch request
+    """
+    id: str = Field(..., description = "The ID of the batch request")
+    object: str = Field(..., description = "The type of the batch request")
+    endpoint: str = Field(..., description = "The endpoint of the batch request")
+    errors: Optional[Any] = Field(None, description = "The errors of the batch request")
+    input_file_id: Optional[str] = Field(None, description = "The input file ID of the batch request")
+    completion_window: Optional[str] = Field(None, description = "The completion window of the batch request")
+    status: Optional[str] = Field(None, description = "The status of the batch request")
+    output_file_id: Optional[str] = Field(None, description = "The output file ID of the batch request")
+    error_file_id: Optional[str] = Field(None, description = "The error file ID of the batch request")
+    created_at: Optional[datetime.datetime] = Field(None, description = "The created at of the batch request")
+    in_progress_at: Optional[datetime.datetime] = Field(None, description = "The in progress at of the batch request")
+    expires_at: Optional[datetime.datetime] = Field(None, description = "The expires at of the batch request")
+    completed_at: Optional[datetime.datetime] = Field(None, description = "The completed at of the batch request")
+    failed_at: Optional[datetime.datetime] = Field(None, description = "The failed at of the batch request")
+    expired_at: Optional[datetime.datetime] = Field(None, description = "The expired at of the batch request")
+    request_counts: Optional[Dict[str, int]] = Field(None, description = "The request counts of the batch request")
+    metadata: Optional[Dict[str, Any]] = Field(None, description = "The metadata of the batch request")
+
+    request_idx_mapping: Dict[str, int] = Field(default_factory = dict, description = "The request index mapping of the batch request")
+
+    @prevalidator('created_at', 'in_progress_at', 'expires_at', 'completed_at', 'failed_at', 'expired_at')
+    def validate_datetime(cls, v: Optional[Union[int, datetime.datetime]]) -> Optional[datetime.datetime]:
+        """
+        Validates the datetime
+        """
+        if not v: return None
+        if not isinstance(v, datetime.datetime): v = datetime.datetime.fromtimestamp(v, datetime.timezone.utc)
+        return v
+
+    @property
+    def is_completed(self) -> bool:
+        """
+        Returns whether the batch request is completed
+        """
+        return self.status in TERMINAL_STATUSES
+
+    @property
+    def is_in_progress(self) -> bool:
+        """
+        Returns whether the batch request is in progress
+        """
+        return self.status in IN_PROGRESS_STATUSES
+
+    @property
+    def is_successful(self) -> bool:
+        """
+        Returns whether the batch request is successful
+        """
+        return self.status in SUCCESSFUL_STATUSES
+
+    @property
+    def is_unsuccessful(self) -> bool:
+        """
+        Returns whether the batch request is unsuccessful
+        """
+        return self.status in UNSUCESSFUL_STATUSES

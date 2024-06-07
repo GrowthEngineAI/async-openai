@@ -6,13 +6,14 @@ import backoff
 import functools
 from lazyops.types import BaseModel, Field, lazyproperty
 from lazyops.utils import ObjectEncoder
+from lazyops.utils.helpers import timed_cache, create_unique_id
 from typing import Dict, Optional, Any, List, Type, Callable, Union
 
 from async_openai.utils.logs import logger
 from async_openai.utils.config import get_settings, get_default_headers, get_max_retries, OpenAISettings, AzureOpenAISettings
 from async_openai.types.errors import fatal_exception, error_handler, RateLimitError, APIError, InvalidMaxTokens, InvalidRequestError, MaxRetriesExceeded
-from async_openai.types.resources import BaseResource, FileResource
-from async_openai.types.responses import BaseResponse
+from async_openai.types.resources import BaseResource, FileResource, FileObject
+from async_openai.types.responses import BaseResponse, BaseBatchResponseItem, BatchBaseResponse, BatchStatusResponse
 
 __all__ = [
     'BaseRoute',
@@ -76,6 +77,9 @@ class BaseRoute(BaseModel):
 
     api_resource: Optional[str] = Field(default = '', exclude = True)
     root_name: Optional[str] = Field(default = '', exclude = True)
+
+
+    is_rate_limited_value: Optional[bool] = Field(default = False, exclude = True, description = 'A flag to indicate if the API is rate limited')
 
     # @lazyproperty
     # def api_resource(self):
@@ -224,6 +228,15 @@ class BaseRoute(BaseModel):
         data = self.handle_response(api_response)
         return self.prepare_response(data, input_object = input_object, parse_stream = parse_stream)
     
+    @timed_cache(secs = 120, cache_if_result = True)
+    def check_if_rate_limited(self):
+        """
+        Checks if the API is rate limited
+        """
+        if not self.is_rate_limited_value: return False
+        self.is_rate_limited_value = False
+        return True
+
     def create(
         self,
         input_object: Optional[BaseResource] = None,
@@ -246,12 +259,14 @@ class BaseRoute(BaseModel):
         
         # Handle Auto Retry Logic
         current_model = kwargs.get('model', input_object.model if input_object else None)
-        if not auto_retry_limit: auto_retry_limit = self.settings.max_retries
+        # if not auto_retry_limit: auto_retry_limit = self.settings.max_retries
+        if auto_retry_limit is None: auto_retry_limit = self.max_retries if self.max_retries is not None else self.settings.max_retries
         try:
             return self._create(input_object = input_object, timeout = timeout, headers = headers, **kwargs)
         except RateLimitError as e:
             if current_attempt >= auto_retry_limit:
                 raise MaxRetriesExceeded(name = self.name, attempts = current_attempt, base_exception = e) from e
+            self.is_rate_limited_value = True
             sleep_interval = e.retry_after_seconds * 1.5 if e.retry_after_seconds else 15.0
             logger.warning(f'[{self.name} - {current_model}: {current_attempt}/{auto_retry_limit}] Rate Limit Error. Sleeping for {sleep_interval} seconds')
             time.sleep(sleep_interval)
@@ -375,13 +390,14 @@ class BaseRoute(BaseModel):
         
         # Handle Auto Retry Logic
         current_model = kwargs.get('model', input_object.model if input_object else None)
-        if not auto_retry_limit: auto_retry_limit = self.settings.max_retries
+        if auto_retry_limit is None: auto_retry_limit = self.max_retries if self.max_retries is not None else self.settings.max_retries
         try:
             return await self._async_create(input_object = input_object, timeout = timeout, headers = headers, **kwargs)
         except RateLimitError as e:
             if current_attempt >= auto_retry_limit:
                 raise MaxRetriesExceeded(name = self.name, attempts = current_attempt, base_exception = e) from e
-            sleep_interval = e.retry_after_seconds * 1.5 if e.retry_after_seconds else 15.0
+            self.is_rate_limited_value = True
+            sleep_interval = e.retry_after_seconds * 1.5 if e.retry_after_seconds else (7.5 * max(2, current_attempt))
             logger.warning(f'[{self.name} - {current_model}: {current_attempt}/{auto_retry_limit}] Rate Limit Error. Sleeping for {sleep_interval} seconds')
             await asyncio.sleep(sleep_interval)
             current_attempt += 1
@@ -399,7 +415,7 @@ class BaseRoute(BaseModel):
             if current_attempt >= auto_retry_limit:
                 raise MaxRetriesExceeded(name = self.name, attempts=current_attempt, base_exception = e) from e
             logger.warning(f'[{self.name} - {current_model}: {current_attempt}/{auto_retry_limit}] API Error: {e}. Sleeping for 10 seconds')
-            await asyncio.sleep(10.0)
+            await asyncio.sleep(5.0 * max(2, current_attempt))
             current_attempt += 1
             if header_cache_keys and headers:
                 # headers = kwargs.pop('headers')
@@ -429,7 +445,7 @@ class BaseRoute(BaseModel):
                 error_kind = 'HTML Error'
                 error_value = error_value[:500]
             logger.warning(f'[{self.name} - {current_model}: {current_attempt}/{auto_retry_limit}] {error_kind}: ({type(e)}) {error_value}. Sleeping for 10 seconds')
-            await asyncio.sleep(10.0)
+            await asyncio.sleep(5.0 * max(2, current_attempt))
             current_attempt += 1
             if header_cache_keys and headers:
                 # headers = kwargs.pop('headers')
@@ -448,6 +464,67 @@ class BaseRoute(BaseModel):
             
 
     acreate = async_create
+
+
+    def batch_create_v2(
+        self, 
+        batch: List[Union[BaseResource, Dict[str, Any]]],
+        headers: Optional[Dict[str, str]] = None,
+        timeout: Optional[int] = None,
+        header_cache_keys: Optional[List[str]] = None,
+        until_complete: Optional[bool] = True,
+        poll_interval: Optional[float] = 10.0,
+        **kwargs
+    ) -> Union[BatchBaseResponse, BatchStatusResponse]:
+        """
+        Batch Create Resources
+
+        :param batch: List of Resources to Create
+        :param headers: Optional Headers
+        :param timeout: Optional Timeout
+        :param header_cache_keys: Optional Header Cache Keys
+        :param until_complete: Optional Wait until the batch is complete
+        """
+        raise NotImplementedError('Batch Create v2 is not supported for this route')
+        if not self.create_batch_enabled:
+            raise NotImplementedError(f'Batch Create is not enabled for {self.api_resource}')
+        input_batch, kwargs = self.input_model.create_batch_resource(resource = self.input_model, batch = batch, **kwargs)
+        input_object_idx = [
+            {create_unique_id(): n} for n in range(len(input_batch))
+        ]
+        input_data_items = [
+            {
+                "custom_id": x,
+                "method": "POST",
+                "url": self.api_resource, 
+                "body": i.dict(exclude_none = self.exclude_null)
+            } for x, i in zip(input_object_idx, input_batch)
+        ]
+        
+        # WIP - Batch Create
+        if input_object is None:
+            input_object, kwargs = self.input_model.create_resource(
+                resource = self.input_model,
+                **kwargs
+            )
+
+        api_resource = f'{self.api_resource}/batch'
+        data = json.dumps(
+            # get_pyd_dict(input_object, exclude_none = self.exclude_null),
+            input_object.dict(exclude_none = self.exclude_null), 
+            cls = ObjectEncoder
+        )
+        api_response = self._send(
+            method = 'POST',
+            url = self.get_resource_url(data = data),
+            data = data,
+            headers = headers,
+            timeout = self.timeout,
+            **kwargs
+        )
+        resp = self.handle_response(api_response)
+        return self.prepare_response(resp, input_object = input_object)
+
     
     def batch_create(
         self, 
@@ -941,6 +1018,50 @@ class BaseRoute(BaseModel):
 
     aupsert = async_upsert
 
+
+    def upload_v2(
+        self, 
+        input_object: Optional[FileResource] = None,
+        batch: Optional[List[Union[Dict[str, Any], str]]] = None,
+        headers: Optional[Dict[str, str]] = None,
+        endpoint: Optional[str] = None,
+        **kwargs,
+    ) -> FileObject:
+        """
+        Upload a Resource
+
+        :param input_object: Input Object to Create
+        """
+        bypass_allowed = kwargs.pop('bypass_allowed', False)
+        if not bypass_allowed and not self.upload_enabled:
+            raise NotImplementedError(f'Upload is not enabled for {self.api_resource}')
+        
+        if input_object is None: 
+            if batch:
+                input_object, kwargs = FileResource.create_from_batch(
+                    batch = batch, 
+                    **kwargs
+                )
+            else:
+                input_object, kwargs = self.input_model.create_resource(
+                    resource = FileResource,
+                    **kwargs
+                )
+        
+        headers = headers or {}
+        headers['Content-Type'] = 'multipart/form-data'
+        endpoint = endpoint or 'files'
+        api_response = self._send(
+            method = 'POST',
+            url = endpoint,
+            files = input_object.get_params(**kwargs),
+            headers = headers,
+            timeout = self.timeout,
+            **kwargs
+        )
+        data = self.handle_response(api_response)
+        return self.prepare_response(data, input_object = input_object, response_object = FileObject)
+            
     def upload(
         self, 
         input_object: Optional[Type[FileResource]] = None,
@@ -976,6 +1097,51 @@ class BaseRoute(BaseModel):
         )
         data = self.handle_response(api_response)
         return self.prepare_response(data, input_object = input_object)
+    
+
+    async def async_upload_v2(
+        self, 
+        input_object: Optional[FileResource] = None,
+        batch: Optional[List[Union[Dict[str, Any], str]]] = None,
+        headers: Optional[Dict[str, str]] = None,
+        endpoint: Optional[str] = None,
+        **kwargs,
+    ) -> FileObject:
+        """
+        Upload a Resource
+
+        :param input_object: Input Object to Create
+        """
+        bypass_allowed = kwargs.pop('bypass_allowed', False)
+        if not bypass_allowed and not self.upload_enabled:
+            raise NotImplementedError(f'Upload is not enabled for {self.api_resource}')
+        
+        if input_object is None: 
+            if batch:
+                input_object, kwargs = FileResource.create_from_batch(
+                    batch = batch, 
+                    **kwargs
+                )
+            else:
+                input_object, kwargs = self.input_model.create_resource(
+                    resource = FileResource,
+                    **kwargs
+                )
+        
+        headers = headers or {}
+        headers['Content-Type'] = 'multipart/form-data'
+        endpoint = endpoint or 'files'
+        api_response = await self._async_send(
+            method = 'POST',
+            url = endpoint,
+            files = input_object.get_params(**kwargs),
+            headers = headers,
+            timeout = self.timeout,
+            **kwargs
+        )
+        data = self.handle_response(api_response)
+        return self.prepare_response(data, input_object = input_object, response_object = FileObject)
+
         
     async def async_upload(
         self, 

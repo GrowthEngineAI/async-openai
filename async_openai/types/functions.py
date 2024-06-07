@@ -7,6 +7,7 @@ OpenAI Functions Base Class
 import jinja2
 import functools
 import inspect
+import random
 from abc import ABC
 from pydantic import Field, BaseModel
 # from lazyops.types import BaseModel
@@ -14,6 +15,7 @@ from lazyops.utils.times import Timer
 from lazyops.libs.proxyobj import ProxyObject
 from lazyops.types.models import schema_extra, PYD_VERSION
 from async_openai.utils.fixjson import resolve_json
+from async_openai.utils.helpers import weighted_choice
 from . import errors
 
 from typing import Optional, Any, Set, Dict, List, Union, Type, Tuple, Awaitable, Generator, AsyncGenerator, TypeVar, TYPE_CHECKING
@@ -37,6 +39,7 @@ class BaseFunctionModel(BaseModel):
     function_name: Optional[str] = Field(None, hidden = True)
     function_model: Optional[str] = Field(None, hidden = True)
     function_duration: Optional[float] = Field(None, hidden = True)
+    function_client_name: Optional[str] = Field(None, hidden = True)
 
     if TYPE_CHECKING:
         function_usage: Optional[Usage]
@@ -97,15 +100,22 @@ class BaseFunctionModel(BaseModel):
         self,
         response: 'ChatResponse',
         name: Optional[str] = None,
+        client_name: Optional[str] = None,
         **kwargs
     ) -> 'BaseFunctionModel':
         """
         Sets the values from the response
         """
         if name: self.function_name = name
-        self.function_usage = response.usage
+        usage = response.usage
+        if isinstance(usage, dict): 
+            from async_openai.types.resources import Usage
+            usage = Usage(**usage)
+            
+        self.function_usage = usage
         if response.response_ms: self.function_duration = response.response_ms / 1000
         self.function_model = response.model
+        if client_name: self.function_client_name = client_name
 
     @property
     def function_cost(self) -> Optional[float]:
@@ -151,8 +161,9 @@ class BaseFunction(ABC):
     prompt_template: Optional[str] = None
     system_template: Optional[str] = None
 
-    default_model: Optional[str] = 'gpt-35-turbo'
+    default_model: Optional[Union[str, List[str]]] = 'gpt-35-turbo'
     default_larger_model: Optional[bool] = None
+    default_model_weights: Optional[Dict[str, float]] = None
     cachable: Optional[bool] = True
     result_buffer: Optional[int] = 1000
     retry_limit: Optional[int] = 5
@@ -164,10 +175,18 @@ class BaseFunction(ABC):
 
     auto_register_function: Optional[bool] = True
 
+    @classmethod
+    def configure_subclass(cls, **kwargs):
+        """
+        Configures the subclass
+        """
+        pass
+
     def __init_subclass__(cls, **kwargs):
         """
         Subclass Hook
         """
+        cls.configure_subclass(**kwargs)
         if cls.auto_register_function:
             OpenAIFunctions.register_function(cls, initialize = False)
 
@@ -199,6 +218,8 @@ class BaseFunction(ABC):
             self.debug_enabled = debug_enabled
         else:
             self.debug_enabled = self.settings.debug_enabled
+        if self.default_model_weights and not isinstance(self.default_model, list):
+            self.default_model = list(self.default_model_weights.keys())
         self.build_funcs(**kwargs)
         self.build_templates(**kwargs)
         self.post_init(**kwargs)
@@ -208,11 +229,15 @@ class BaseFunction(ABC):
         """
         Returns the default model
         """
+        if self.default_model_weights:
+            default_model = weighted_choice(self.default_model_weights)
+        else:
+            default_model = self.default_model if isinstance(self.default_model, str) else random.choice(self.default_model)
         if self.settings.is_local_env:
-            return self.default_model_local or self.default_model
+            return self.default_model_local or default_model
         if self.settings.is_development_env:
-            return self.default_model_develop or self.default_model
-        return self.default_model_production or self.default_model
+            return self.default_model_develop or default_model
+        return self.default_model_production or default_model
 
     @property
     def autologger(self) -> 'Logger':
@@ -228,6 +253,8 @@ class BaseFunction(ABC):
         """
         Returns True if the default model is different than the default model
         """
+        if isinstance(self.default_model, list):
+            return self.default_model_func not in self.default_model
         return self.default_model_func != self.default_model
 
 
@@ -423,10 +450,10 @@ class BaseFunction(ABC):
                 **kwargs,
             )
         except errors.InvalidRequestError as e:
-            self.logger.info(f"[{current_attempt}/{self.retry_limit}] [{self.name} - {model}] Invalid Request Error. |r|{e}|e|", colored=True)
+            self.logger.info(f"[{current_attempt}/{self.retry_limit}] [{self.name} - {chat.name}:{model}] Invalid Request Error. |r|{e}|e|", colored=True)
             raise e
         except errors.MaxRetriesExceeded as e:
-            self.autologger.info(f"[{current_attempt}/{self.retry_limit}] [{self.name} - {model}] Retrying...", colored=True)
+            self.autologger.info(f"[{current_attempt}/{self.retry_limit}] [{self.name} - {chat.name}:{model}] Retrying...", colored=True)
             return await self.arun_chat_function(
                 messages = messages,
                 cachable = cachable,
@@ -441,7 +468,7 @@ class BaseFunction(ABC):
                 **kwargs,
             )
         except Exception as e:
-            self.autologger.info(f"[{current_attempt}/{self.retry_limit}] [{self.name} - {model}] Unknown Error Trying to run chat function: |r|{e}|e|", colored=True)
+            self.autologger.info(f"[{current_attempt}/{self.retry_limit}] [{self.name} - {chat.name}:{model}] Unknown Error Trying to run chat function: |r|{e}|e|", colored=True)
             return await self.arun_chat_function(
                 messages = messages,
                 cachable = cachable,
@@ -498,14 +525,15 @@ class BaseFunction(ABC):
         response: 'ChatResponse',
         schema: Optional[Type[FunctionSchemaT]] = None,
         include_name: Optional[bool] = True,
+        client_name: Optional[str] = None,
     ) -> Optional[FunctionSchemaT]:  # sourcery skip: extract-duplicate-method
         """
         Parses the response
         """
         schema = schema or self.schema
         try:
-            result = schema.model_validate(response.function_results[0].arguments, from_attributes = True)
-            result._set_values_from_response(response, name = self.name if include_name else None)
+            result = schema.model_validate(response.function_results[0].arguments, from_attributes = True, context = {'source': 'function'})
+            result._set_values_from_response(response, name = self.name if include_name else None, client_name = client_name)
             return result
         except IndexError as e:
             self.autologger.error(f"[{self.name} - {response.model} - {response.usage}] No function results found: {e}\n{response.text}")
@@ -513,7 +541,7 @@ class BaseFunction(ABC):
         except Exception as e:
             self.autologger.error(f"[{self.name} - {response.model} - {response.usage}] Failed to parse object: {e}\n{response.text}\n{response.function_results[0].arguments}")
             try:
-                result = schema.model_validate(resolve_json(response.function_results[0].arguments), from_attributes = True)
+                result = schema.model_validate(resolve_json(response.function_results[0].arguments), from_attributes = True, context = {'source': 'function'})
                 result._set_values_from_response(response, name = self.name if include_name else None)
                 return result
             except Exception as e:
@@ -681,7 +709,7 @@ class BaseFunction(ABC):
             **kwargs,
         )
 
-        result = self.parse_response(response, include_name = True)
+        result = self.parse_response(response, include_name = True, client_name = chat.name)
         if result is not None: return result
 
         # Try Again
@@ -696,10 +724,10 @@ class BaseFunction(ABC):
                 cachable = False,
                 **kwargs,
             )
-            result = self.parse_response(response, include_name = True)
+            result = self.parse_response(response, include_name = True, client_name = chat.name)
             if result is not None: return result
             attempts += 1
-        self.autologger.error(f"Unable to parse the response for {self.name} after {self.max_attempts} attempts.")
+        self.autologger.error(f"[{chat.name}:{model}] Unable to parse the response for {self.name} after {self.max_attempts} attempts.")
         if raise_errors: raise errors.MaxRetriesExhausted(
             name = self.name, 
             func_name = self.name,
@@ -727,7 +755,7 @@ class BaseFunction(ABC):
             **kwargs,
         )
 
-        result = self.parse_response(response, include_name = True)
+        result = self.parse_response(response, include_name = True, client_name = chat.name)
         if result is not None: return result
 
         # Try Again
@@ -742,10 +770,10 @@ class BaseFunction(ABC):
                 cachable = False,
                 **kwargs,
             )
-            result = self.parse_response(response, include_name = True)
+            result = self.parse_response(response, include_name = True, client_name = chat.name)
             if result is not None: return result
             attempts += 1
-        self.autologger.error(f"Unable to parse the response for {self.name} after {self.max_attempts} attempts.")
+        self.autologger.error(f"[{chat.name}:{model}] Unable to parse the response for {self.name} after {self.max_attempts} attempts.")
         if raise_errors: raise errors.MaxRetriesExhausted(
             name = self.name, 
             func_name = self.name,
@@ -945,6 +973,7 @@ class FunctionManager(ABC):
         with_index: Optional[bool] = False,
         **function_kwargs
     ) -> Union[Optional['FunctionSchemaT'], Tuple[int, Optional['FunctionSchemaT']]]:
+        # sourcery skip: low-code-quality
         """
         Runs the function
         """
@@ -964,7 +993,7 @@ class FunctionManager(ABC):
         if function.has_diff_model_than_default:
             key += f'.{function.default_model_func}'
 
-        t = Timer()
+        t = Timer(format_short = 1)
         result = None
         cache_hit = False
         if self.cache_enabled and not overwrite:
@@ -979,7 +1008,7 @@ class FunctionManager(ABC):
             if self.cache_enabled and function.is_valid_response(result):
                 self.cache.set(key, result)
         
-        self.autologger.info(f"Function: {function.name} in {t.total_s} (Cache Hit: {cache_hit})", prefix = key, colored = True)
+        self.autologger.info(f"Function: {function.name} in {t.total_s} (Model: {result.function_model}, Client: {result.function_client_name}, Cache Hit: {cache_hit})", prefix = key, colored = True)
         if is_iterator and with_index:
             return idx, result if function.is_valid_response(result) else (idx, None)
         return result if function.is_valid_response(result) else None
@@ -1015,7 +1044,7 @@ class FunctionManager(ABC):
         if function.has_diff_model_than_default:
             key += f'.{function.default_model_func}'
 
-        t = Timer()
+        t = Timer(format_short = 1)
         result = None
         cache_hit = False
         if self.cache_enabled and not overwrite:
@@ -1030,7 +1059,7 @@ class FunctionManager(ABC):
             if self.cache_enabled and function.is_valid_response(result):
                 await self.cache.aset(key, result)
         
-        self.autologger.info(f"Function: {function.name} in {t.total_s} (Cache Hit: {cache_hit})", prefix = key, colored = True)
+        self.autologger.info(f"Function: {function.name} in {t.total_s} (Model: {result.function_model}, Client: {result.function_client_name}, Cache Hit: {cache_hit})", prefix = key, colored = True)
         if is_iterator and with_index:
             return idx, result if function.is_valid_response(result) else (idx, None)
         return result if function.is_valid_response(result) else None

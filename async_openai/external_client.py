@@ -113,7 +113,10 @@ class ExternalOpenAIClient(abc.ABC):
         if max_retries is not None:
             self.max_retries = max_retries
         elif self.max_retries is None:
-            self.max_retries = self.settings.max_retries
+            if self.provider.config.max_retries is not None:
+                self.max_retries = self.provider.config.max_retries
+            else:
+                self.max_retries = self.settings.max_retries
         if disable_retries is not None:
             self.disable_retries = disable_retries
         elif self.disable_retries is None:
@@ -291,11 +294,13 @@ class ExternalOpenAIClient(abc.ABC):
         """
         Pings the API Endpoint to check if it's alive.
         """
-        with contextlib.suppress(Exception):
+        try:
             response = await self.client.async_get('/', timeout = timeout)
             data = response.json()
             # we should expect a 404 with a json response
             if data.get('error'): return True
+        except Exception as e:
+            logger.error(f"[{self.name}] API Ping Failed: {e}")
         return False
 
 

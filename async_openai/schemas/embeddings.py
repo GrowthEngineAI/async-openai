@@ -28,6 +28,9 @@ class EmbeddingObject(BaseResource):
     model: Optional[str] = "text-embedding-ada-002"
     input: Optional[Union[List[Any], Any]] = None
     user: Optional[str] = None
+    dimensions: Optional[int] = None
+    encoding_format: Optional[str] = None
+
 
     @validator('model', pre=True, always=True)
     def validate_model(cls, v, values: Dict[str, Any]) -> str:
@@ -45,11 +48,11 @@ class EmbeddingObject(BaseResource):
         return v
     
 
-    def dict(self, *args, exclude: Any = None, **kwargs):
+    def dict(self, *args, exclude: Any = None, exclude_unset: bool = True, **kwargs):
         """
         Returns the dict representation of the response
         """
-        return super().dict(*args, exclude = exclude, **kwargs)
+        return super().dict(*args, exclude = exclude, exclude_unset = exclude_unset, **kwargs)
     
 
 
@@ -106,6 +109,8 @@ class EmbeddingRoute(BaseRoute):
         self, 
         input: Optional[Union[str, List[str], List[List]]] = None,
         model: Optional[str] = "text-embedding-ada-002",
+        dimensions: Optional[int] = None,
+        encoding_format: Optional[str] = 'float',
         user: Optional[str] = None,
         auto_retry: Optional[bool] = False,
         auto_retry_limit: Optional[int] = None,
@@ -128,6 +133,12 @@ class EmbeddingRoute(BaseRoute):
 
         :model (string, required): ID of the model to use. You can use the List models API to see all of your available models, or see our Model overview for descriptions of them.
         Default: `text-embedding-ada-002`
+
+        :dimensions (optional): Number of dimensions to use for the embedding. If not specified, the model will use the default number of dimensions for the model. This is only supported in `text-embedding-3` and later models
+        Default: `None`
+
+        :encoding_format (optional): The format of the encoding. If not specified, the model will use the default encoding format for the model. Defaults to `float`
+        Default: `float`
 
         :user (optional): A unique identifier representing your end-user, which can help OpenAI to 
         monitor and detect abuse.
@@ -163,6 +174,12 @@ class EmbeddingRoute(BaseRoute):
         :model (string, required): ID of the model to use. You can use the List models API to see all of your available models, or see our Model overview for descriptions of them.
         Default: `text-embedding-ada-002`
 
+        :dimensions (optional): Number of dimensions to use for the embedding. If not specified, the model will use the default number of dimensions for the model. This is only supported in `text-embedding-3` and later models
+        Default: `None`
+
+        :encoding_format (optional): The format of the encoding. If not specified, the model will use the default encoding format for the model. Defaults to `float`
+        Default: `float`
+
         :user (optional): A unique identifier representing your end-user, which can help OpenAI to 
         monitor and detect abuse.
         Default: `None`
@@ -181,6 +198,8 @@ class EmbeddingRoute(BaseRoute):
         self, 
         input: Optional[Union[str, List[str], List[List]]] = None,
         model: Optional[str] = "text-embedding-ada-002",
+        dimensions: Optional[int] = None,
+        encoding_format: Optional[str] = 'float',
         user: Optional[str] = None,
         auto_retry: Optional[bool] = False,
         auto_retry_limit: Optional[int] = None,
@@ -203,6 +222,12 @@ class EmbeddingRoute(BaseRoute):
 
         :model (string, required): ID of the model to use. You can use the List models API to see all of your available models, or see our Model overview for descriptions of them.
         Default: `text-embedding-ada-002`
+
+        :dimensions (optional): Number of dimensions to use for the embedding. If not specified, the model will use the default number of dimensions for the model. This is only supported in `text-embedding-3` and later models
+        Default: `None`
+
+        :encoding_format (optional): The format of the encoding. If not specified, the model will use the default encoding format for the model. Defaults to `float`
+        Default: `float`
 
         :user (optional): A unique identifier representing your end-user, which can help OpenAI to 
         monitor and detect abuse.
@@ -235,6 +260,12 @@ class EmbeddingRoute(BaseRoute):
 
         :model (string): ID of the model to use. You can use the List models API to see all of your available models, or see our Model overview for descriptions of them.
         Default: `text-embedding-ada-002`
+
+        :dimensions (optional): Number of dimensions to use for the embedding. If not specified, the model will use the default number of dimensions for the model. This is only supported in `text-embedding-3` and later models
+        Default: `None`
+
+        :encoding_format (optional): The format of the encoding. If not specified, the model will use the default encoding format for the model. Defaults to `float`
+        Default: `float`
 
         :user (optional): A unique identifier representing your end-user, which can help OpenAI to 
         monitor and detect abuse.

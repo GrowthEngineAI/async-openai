@@ -1,9 +1,13 @@
 
+import random
 import inspect
 import aiohttpx
+import bisect
+import itertools
+
 from datetime import datetime, timedelta
 
-from typing import Dict, Optional, Iterator, AsyncIterator, Union
+from typing import Dict, Optional, Iterator, AsyncIterator, Union, List, Tuple
 from lazyops.utils.helpers import timed, timer, is_coro_func
 
 __all__ = [
@@ -112,3 +116,17 @@ async def aparse_stream(response: aiohttpx.Response) -> AsyncIterator[str]:
         _line = parse_stream_line(line)
         if _line is not None:
             yield _line
+
+
+def weighted_choice(choices: Union[List[Tuple[str, float]], Dict[str, float]]) -> str:
+   """
+   Randomly selects a choice based on the weights provided
+   """
+   if isinstance(choices, dict):
+       choices = list(choices.items())
+   weights = list(zip(*choices))[1]
+   return choices[bisect.bisect(
+       list(itertools.accumulate(weights)),
+        random.uniform(0, sum(weights))
+    )][0]
+

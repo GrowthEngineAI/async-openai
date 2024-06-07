@@ -1,7 +1,7 @@
 import aiohttpx
 import contextlib
 from typing import Optional, Callable, Dict, Union, List
-
+from lazyops.utils.helpers import timed_cache
 from async_openai.schemas import *
 from async_openai.types.options import ApiType
 from async_openai.utils.logs import logger
@@ -413,31 +413,40 @@ class OpenAIClient:
     async def __aexit__(self, exc_type, exc_value, traceback):
         await self.async_close()
 
-
-    def ping(self, timeout: Optional[float] = 1.0) -> bool:
+    @timed_cache(secs = 120, cache_if_result = True)
+    def ping(self, timeout: Optional[float] = 1.0, base_url: Optional[str] = None) -> bool:
         """
         Pings the API Endpoint to check if it's alive.
         """
         try:
         # with contextlib.suppress(Exception):
-            response = self.client.get('/', timeout = timeout)
-            data = response.json()
-            # we should expect a 404 with a json response
-            # if self.debug_enabled: logger.info(f"API Ping: {data}\n{response.headers}")
-            if data.get('error'): return True
+            response = self.client.get(base_url or '/', timeout = timeout)
+            try:
+                data = response.json()
+                # we should expect a 404 with a json response
+                # if self.debug_enabled: logger.info(f"API Ping: {data}\n{response.headers}")
+                if data.get('error'): return True
+            except Exception as e:
+                logger.error(f"[{self.name} - {response.status_code}] API Ping Failed: {response.text[:500]}")
         except Exception as e:
-            logger.error(f"API Ping Failed: {e}")
+            logger.error(f"[{self.name}] API Ping Failed: {e}")
         return False
     
-    async def aping(self, timeout: Optional[float] = 1.0) -> bool:
+    @timed_cache(secs = 120, cache_if_result = True)
+    async def aping(self, timeout: Optional[float] = 1.0, base_url: Optional[str] = None) -> bool:
         """
         Pings the API Endpoint to check if it's alive.
         """
-        with contextlib.suppress(Exception):
-            response = await self.client.async_get('/', timeout = timeout)
-            data = response.json()
-            # we should expect a 404 with a json response
-            if data.get('error'): return True
+        try:
+            response = await self.client.async_get(base_url or '/', timeout = timeout)
+            try:
+                data = response.json()
+                # we should expect a 404 with a json response
+                if data.get('error'): return True
+            except Exception as e:
+                logger.error(f"[{self.name} - {response.status_code}] API Ping Failed: {response.text[:500]}")
+        except Exception as e:
+            logger.error(f"[{self.name}] API Ping Failed: {e}")
         return False
 
 

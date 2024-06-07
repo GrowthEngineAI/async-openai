@@ -56,8 +56,11 @@ def distances_from_embeddings(
 
 def indices_of_nearest_neighbors_from_distances(
     distances: 'ndarray',
+    reverse: Optional[bool] = False,
 ) -> 'ndarray':
     """
     Return a list of indices of nearest neighbors from a list of distances.
     """
-    return np.argsort(distances)
+    return np.argsort(distances)[::-1] if reverse else np.argsort(distances)
+    # if reverse: distances = distances[::-1] 
+    # return np.argsort(distances)

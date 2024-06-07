@@ -1,5 +1,27 @@
 # Changelogs
 
+#### v0.0.53 (2024-05-31)
+
+- Added support for new `gpt-4-o` model
+- Added support for external providers
+- Update certain validation behavior of Functions
+
+- TODO: Add batch create support
+
+#### v0.0.52 (2024-02-28)
+
+- Added support for the following parameters in `model_configurations` in `OpenAIManager`:
+
+  - `ping_timeout` - allows for custom timeouts for each client.
+
+  - `included_models` - allows for more flexible setting of models in Azure.
+
+  - `weight` - allows for weighted selection of clients.
+
+- Improved Healthcheck behavior to cache if successful for a period of time, and always recheck if not.
+
+- Added `dimension` parameter for `embedding` models.
+
 #### v0.0.51rc (2024-02-07)
 
 - Modification of `async_openai.types.context.ModelContextHandler` to a proxied object singleton.

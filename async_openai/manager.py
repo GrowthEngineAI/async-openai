@@ -15,6 +15,7 @@ from async_openai.types.options import ApiType
 from async_openai.types.context import ModelContextHandler
 from async_openai.utils.config import get_settings, OpenAISettings
 from async_openai.utils.external_config import ExternalProviderSettings
+from async_openai.utils.helpers import weighted_choice
 from async_openai.types.functions import FunctionManager, OpenAIFunctions
 from async_openai.utils.logs import logger
 
@@ -37,7 +38,17 @@ DefaultModelMapping = {
     'gpt-3.5-turbo-0613': 'gpt-35-turbo-0613',
     'gpt-3.5-turbo-1106': 'gpt-35-turbo-1106',
 }
-    
+DefaultAvailableModels = [
+    'gpt-4',
+    'gpt-4-32k',
+    'gpt-4-turbo',
+    'gpt-4-1106-preview',
+    'gpt-4-0125-preview',
+    'text-embedding-ada-2',
+    'text-embedding-3-small',
+    'text-embedding-3-large',
+] + list(DefaultModelMapping.values())
+
 class OpenAIManager(abc.ABC):
     name: Optional[str] = "openai"
     on_error: Optional[Callable] = None
@@ -61,7 +72,11 @@ class OpenAIManager(abc.ABC):
         """
         Initializes the OpenAI API Client
         """
+        self.client_weights: Optional[Dict[str, float]] = {}
+        self.client_ping_timeouts: Optional[Dict[str, float]] = {}
         self.client_model_exclusions: Optional[Dict[str, Dict[str, Union[bool, List[str]]]]] = {}
+        self.client_base_urls: Optional[Dict[str, str]] = {}
+
         self.no_proxy_client_names: Optional[List[str]] = []
         self.client_callbacks: Optional[List[Callable]] = []
         self.functions: FunctionManager = OpenAIFunctions
@@ -70,9 +85,24 @@ class OpenAIManager(abc.ABC):
         if self.auto_healthcheck is None: self.auto_healthcheck = self.settings.auto_healthcheck
 
         self.external_clients: Dict[str, 'ExternalOpenAIClient'] = {}
+        self.external_client_weights: Optional[Dict[str, float]] = {}
         self.external_model_to_client: Dict[str, str] = {}
         self.external_client_default: Optional[str] = None
         # self._external_clients: 
+
+    @property
+    def has_client_weights(self) -> bool:
+        """
+        Returns if the client has weights
+        """
+        return bool(self.client_weights)
+    
+    @property
+    def has_external_client_weights(self) -> bool:
+        """
+        Returns if the client has weights
+        """
+        return bool(self.external_client_weights)
 
     def add_callback(self, callback: Callable):
         """
@@ -271,16 +301,24 @@ class OpenAIManager(abc.ABC):
             if not client_names: return self.apis.get_api_client(**kwargs)
             return self.apis.get_api_client_from_list(client_names = client_names, **kwargs)
         if not client_names: return self.get_api_client(**kwargs)
+        
         if not self.auto_healthcheck:
-            name = random.choice(client_names)
+            name = self.select_client_name_from_weights(client_names) if self.has_client_weights else random.choice(client_names)
             return self.get_api_client(client_name = name, **kwargs)
         
+        available = []
         for client_name in client_names:
             if client_name not in self._clients:
                 self._clients[client_name] = self.init_api_client(client_name = client_name, **kwargs)
-            if not self._clients[client_name].ping():
+            if not self._clients[client_name].ping(**self.get_client_ping_params(client_name)):
                 continue
-            return self._clients[client_name]
+            if not self.has_client_weights:
+                return self._clients[client_name]
+            available.append(client_name)
+        
+        if available:
+            name = self.select_client_name_from_weights(available)
+            return self._clients[name]
         raise ValueError(f'No healthy client found from: {client_names}')
     
     async def aget_api_client_from_list(
@@ -293,18 +331,25 @@ class OpenAIManager(abc.ABC):
         """
         if self.auto_loadbalance_clients:
             if not client_names: return self.apis.get_api_client(**kwargs)
-            return await self.apis.aget_api_client_from_list(client_name = client_name, **kwargs)
+            return await self.apis.aget_api_client_from_list(client_names = client_names, **kwargs)
         if not client_names: return self.get_api_client(**kwargs)
         if not self.auto_healthcheck:
-            name = random.choice(client_names)
+            name = self.select_client_name_from_weights(client_names) if self.has_client_weights else random.choice(client_names)
             return self.get_api_client(client_name = name, **kwargs)
         
+        available = []
         for client_name in client_names:
             if client_name not in self._clients:
                 self._clients[client_name] = self.init_api_client(client_name = client_name, **kwargs)
-            if not await self._clients[client_name].aping():
+            if not await self._clients[client_name].aping(**self.get_client_ping_params(client_name)):
                 continue
-            return self._clients[client_name]
+            if not self.has_client_weights:
+                return self._clients[client_name]
+            available.append(client_name)
+        
+        if available:
+            name = self.select_client_name_from_weights(available)
+            return self._clients[name]
         raise ValueError(f'No healthy client found from: {client_names}')
     
         
@@ -357,6 +402,8 @@ class OpenAIManager(abc.ABC):
         self.external_clients[client.name] = client
         if set_as_default or not self.external_client_default:
             self.external_client_default = client.name
+        if client.provider.config.weight is not None:
+            self.external_client_weights[client.name] = client.provider.config.weight
         for model_name in client.provider.model_list:
             provider_model_name = f'{client.name}/{model_name}'
             self.external_model_to_client[provider_model_name] = client.name
@@ -417,7 +464,8 @@ class OpenAIManager(abc.ABC):
         if client.provider.config.has_api_keys:
             extra += f' Multiple API Keys: {len(client.provider.config.api_keys)},'
         extra = extra.strip().rstrip(',')
-        logger.info(f'Registered `|g|{client.name}|e|` @ `{client.provider.config.api_url}` (External: |g|{client.provider.name}|e|, {extra})', colored = True)
+        if extra: extra = f', {extra}'
+        logger.info(f'Registered `|g|{client.name}|e|` @ `{client.provider.config.api_url}` (External: |g|{client.provider.name}|e|{extra})', colored = True)
         return client
 
 
@@ -535,6 +583,32 @@ class OpenAIManager(abc.ABC):
         """
         if self._api is None: self.configure_internal_apis()
 
+    def select_client_name_from_weights(self, names: List[str]) -> str:
+        """
+        Returns the client weights
+        """
+        return weighted_choice([(name, self.client_weights.get(name, 1.0)) for name in names])
+
+    def select_external_client_name_from_weights(self, names: List[str]) -> str:
+        """
+        Returns the client weights
+        """
+        return weighted_choice([(name, self.external_client_weights.get(name, 1.0)) for name in names])
+
+    # def get_client_ping_timeout(self, name: str) -> Optional[float]:
+    #     """
+    #     Returns the client timeout
+    #     """
+    #     return self.client_ping_timeouts.get(name, 1.0)
+    
+    def get_client_ping_params(self, name: str) -> Dict[str, Union[float, str]]:
+        """
+        Returns the client ping parameters
+        """
+        return {
+            'timeout': self.client_ping_timeouts.get(name, 1.0),
+            'base_url': self.client_base_urls.get(name),
+        }
 
     """
     API Routes
@@ -640,11 +714,13 @@ class OpenAIManager(abc.ABC):
             self.init_api_client('azure', is_azure = True)
 
 
-    def register_client_endpoints(self):
+    def register_client_endpoints(self):  # sourcery skip: low-code-quality
         """
         Register the Client Endpoints
         """
         client_configs = copy.deepcopy(self.settings.client_configurations)
+        seen_models = set(DefaultAvailableModels)
+        has_weights = any(c.get('weight') for c in client_configs.values())
         for name, config in client_configs.items():
             is_enabled = config.pop('enabled', False)
             if not is_enabled: continue
@@ -652,20 +728,33 @@ class OpenAIManager(abc.ABC):
             is_default = config.pop('default', False)
             proxy_disabled = config.pop('proxy_disabled', False)
             source_endpoint = config.get('api_base')
+            client_weight = config.pop('weight', 1.0) if has_weights else None
+            client_ping_timeout = config.pop('ping_timeout', None)
+
             if self.debug_enabled is not None: config['debug_enabled'] = self.debug_enabled
             if excluded_models := config.pop('excluded_models', None):
                 self.client_model_exclusions[name] = {
                     'models': excluded_models, 'is_azure': is_azure,
                 }
+                seen_models.update(excluded_models)
             else:
                 self.client_model_exclusions[name] = {
                     'models': None, 'is_azure': is_azure,
                 }
             
+            if included_models := config.pop('included_models', None):
+                self.client_model_exclusions[name]['included_models'] = included_models
+            
+            if client_weight: self.client_weights[name] = client_weight
+            if client_ping_timeout is not None: self.client_ping_timeouts[name] = client_ping_timeout
+            _has_proxy = False
             if (self.settings.proxy.enabled and not proxy_disabled) and config.get('api_base'):
                 # Initialize a non-proxy version of the client
                 config['api_base'] = source_endpoint
                 non_proxy_name = f'{name}_noproxy'
+                self.client_base_urls[name] = source_endpoint
+                if client_weight: self.client_weights[non_proxy_name] = client_weight
+                if client_ping_timeout is not None: self.client_ping_timeouts[non_proxy_name] = client_ping_timeout
                 self.client_model_exclusions[non_proxy_name] = self.client_model_exclusions[name].copy()
                 self.no_proxy_client_names.append(non_proxy_name)
                 self.init_api_client(non_proxy_name, is_azure = is_azure, set_as_default = False, **config)
@@ -674,9 +763,33 @@ class OpenAIManager(abc.ABC):
                     config = config,
                 )
                 config['api_base'] = self.settings.proxy.endpoint
+                _has_proxy = True
             c = self.init_api_client(name, is_azure = is_azure, set_as_default = is_default, **config)
-            logger.info(f'Registered: `|g|{c.name}|e|` @ `{source_endpoint or c.base_url}` (Azure: {c.is_azure})', colored = True)
-            
+            msg = f'Registered: `|g|{c.name}|e|` @ `{source_endpoint or c.base_url}`'
+            extra_msgs = []
+            if has_weights: 
+                if isinstance(client_weight, float):
+                    _wp, _wsfx = '|g|', '|e|'
+                    if client_weight <= 0.0: 
+                        _wp, _wsfx = '', ''
+                    elif client_weight <= 0.25: _wp = '|r|'
+                    elif client_weight <= 0.45: _wp = '|y|'
+                    extra_msgs.append(f'Weight: {_wp}{client_weight}{_wsfx}')
+                else:
+                    extra_msgs.append(f'Weight: {client_weight}')
+            if c.is_azure: extra_msgs.append('Azure')
+            if _has_proxy: extra_msgs.append('Proxied')
+            if extra_msgs: msg += f' ({", ".join(extra_msgs)})'
+            logger.info(msg, colored = True)
+        
+        # Set the models for inclusion
+        for name in self.client_model_exclusions:
+            if not self.client_model_exclusions[name].get('included_models'): continue
+            included_models = self.client_model_exclusions[name].pop('included_models')
+            self.client_model_exclusions[name]['models'] = [m for m in seen_models if m not in included_models]
+            # if self.settings.debug_enabled:
+            # logger.info(f'|g|{name}|e| Included: {included_models}, Excluded: {self.client_model_exclusions[name]["models"]}', colored = True)
+
 
     def select_client_names(
         self, 
@@ -816,7 +929,7 @@ class OpenAIManager(abc.ABC):
             noproxy_required = noproxy_required, 
             excluded_clients = excluded_clients
         )
-        client_name = random.choice(client_names)
+        client_name = self.select_external_client_name_from_weights(client_names) if self.has_external_client_weights else random.choice(client_names)
         client = self.external_clients[client_name]
         if self.debug_enabled:
             logger.info(f'Available Clients: {client_names} - Selected: {client.name}')
