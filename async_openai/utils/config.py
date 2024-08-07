@@ -531,6 +531,7 @@ class OpenAIProxySettings(BaseSettings):
         else:
             import yaml
             data = yaml.safe_load(text)
+        # print(f"Loaded proxy configurations: {data}")
         for k, v in data.items():
             if v is None: continue
             if k in {'endpoint', 'enabled'}: k = f'proxy_{k}'
@@ -666,6 +667,7 @@ class OpenAISettings(BaseOpenAISettings):
         else:
             import yaml
             data = yaml.safe_load(text)
+        # print(f"Loaded client configurations: {data}")
         self.client_configurations.update(data)
 
     def configure(
