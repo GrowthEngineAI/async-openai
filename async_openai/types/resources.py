@@ -75,9 +75,9 @@ class Usage(BaseModel):
             if usage.total_tokens: self.total_tokens += usage.total_tokens
             return
         
-        if usage.get('prompt_tokens'): self.prompt_tokens += usage['prompt_tokens']
-        if usage.get('completion_tokens'): self.completion_tokens += usage['completion_tokens']
-        if usage.get('total_tokens'): self.total_tokens += usage['total_tokens']
+        if usage.get('prompt_tokens'): self.prompt_tokens += usage.get('prompt_tokens')
+        if usage.get('completion_tokens'): self.completion_tokens += usage.get('completion_tokens')
+        if usage.get('total_tokens'): self.total_tokens += usage.get('total_tokens')
 
     def __iadd__(self, other: Union['Usage', Dict[str, int]]):
         """
